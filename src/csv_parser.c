@@ -1,6 +1,33 @@
 #include "viewer.h"
 #include <wchar.h>
 
+void init_display_cache(CSVViewer *viewer) {
+    viewer->display_cache = malloc(sizeof(DisplayCache));
+    if (viewer->display_cache) {
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            viewer->display_cache->entries[i] = NULL;
+        }
+    }
+}
+
+void cleanup_display_cache(CSVViewer *viewer) {
+    if (!viewer->display_cache) return;
+
+    for (int i = 0; i < CACHE_SIZE; i++) {
+        DisplayCacheEntry *entry = viewer->display_cache->entries[i];
+        while (entry) {
+            DisplayCacheEntry *next = entry->next;
+            free(entry->original_string);
+            for (int j = 0; j < entry->truncated_count; j++) {
+                free(entry->truncated[j].str);
+            }
+            free(entry);
+            entry = next;
+        }
+    }
+    free(viewer->display_cache);
+}
+
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
     
@@ -39,6 +66,7 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     viewer->render_buffer = malloc(MAX_FIELD_LEN);
     
     scan_file(viewer);
+    init_display_cache(viewer);
     
     // Single-pass column detection and width calculation (first 1000 lines)
     viewer->num_cols = 0;
@@ -99,6 +127,7 @@ void cleanup_viewer(CSVViewer *viewer) {
     if (viewer->col_widths) {
         free(viewer->col_widths);
     }
+    cleanup_display_cache(viewer);
 }
 
 char detect_delimiter(const char *data, size_t length) {

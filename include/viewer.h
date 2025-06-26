@@ -12,16 +12,39 @@
 #include <ctype.h>
 #include <locale.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 // Constants
 #define MAX_COLS 256
 #define MAX_FIELD_LEN 1024
 #define BUFFER_SIZE 8192
 
+// Cache for display widths and truncated strings
+#define CACHE_SIZE 16384 // Power of 2 for efficient modulo
+#define MAX_TRUNCATED_VERSIONS 8
+
 // Global variables
 extern int show_header;
 extern int supports_unicode;
 extern const char* separator;
+
+typedef struct {
+    int width;
+    char *str;
+} TruncatedString;
+
+typedef struct DisplayCacheEntry {
+    uint32_t hash; // FNV-1a hash of the field content
+    int display_width;
+    TruncatedString truncated[MAX_TRUNCATED_VERSIONS];
+    int truncated_count;
+    char *original_string; // Store original string to resolve hash collisions
+    struct DisplayCacheEntry *next; // For chaining in case of collision
+} DisplayCacheEntry;
+
+typedef struct {
+    DisplayCacheEntry *entries[CACHE_SIZE];
+} DisplayCache;
 
 // Zero-copy field descriptor
 typedef struct {
@@ -44,9 +67,15 @@ typedef struct {
     int *col_widths;
     int num_cols;
     char *render_buffer;  // Single buffer for rendering fields when needed
+    DisplayCache *display_cache;
 } CSVViewer;
 
 // Function declarations
+
+// Cache functions
+void init_display_cache(CSVViewer *viewer);
+void cleanup_display_cache(CSVViewer *viewer);
+const char* get_truncated_string(CSVViewer *viewer, const char* original, int width);
 
 // CSV Parser functions (csv_parser.c)
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter);

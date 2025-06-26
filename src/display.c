@@ -2,25 +2,100 @@
 #include <wchar.h>
 #include <string.h>
 
-// Helper function to truncate a string to a specific display width
-static void truncate_to_width(const char* src, char* dest, int width) {
+// FNV-1a hash function for cache lookups
+static uint32_t fnv1a_hash(const char *str) {
+    uint32_t hash = 0x811c9dc5;
+    while (*str) {
+        hash ^= (uint8_t)*str++;
+        hash *= 0x01000193;
+    }
+    return hash;
+}
+
+// Helper function to calculate display width, backing off to strlen for invalid multi-byte chars
+static int calculate_display_width(const char* str) {
+    wchar_t wcs[MAX_FIELD_LEN];
+    mbstowcs(wcs, str, MAX_FIELD_LEN);
+    int width = wcswidth(wcs, MAX_FIELD_LEN);
+    return (width < 0) ? strlen(str) : width;
+}
+
+// Truncates a string using wide characters to respect display width
+static void truncate_str(const char* src, char* dest, int width) {
     wchar_t wcs[MAX_FIELD_LEN];
     mbstowcs(wcs, src, MAX_FIELD_LEN);
-    
+
     int current_width = 0;
     int i = 0;
     for (i = 0; wcs[i] != '\0'; ++i) {
         int char_width = wcwidth(wcs[i]);
-        if (char_width < 0) char_width = 1; // Fallback for control chars
-        
+        if (char_width < 0) char_width = 1;
+
         if (current_width + char_width > width) {
             break;
         }
         current_width += char_width;
     }
     wcs[i] = '\0';
-    
+
     wcstombs(dest, wcs, MAX_FIELD_LEN);
+}
+
+const char* get_truncated_string(CSVViewer *viewer, const char* original, int width) {
+    if (!viewer->display_cache) return original;
+
+    // Use a static buffer for non-cacheable results to avoid memory leaks
+    static char static_buffer[MAX_FIELD_LEN];
+
+    uint32_t hash = fnv1a_hash(original);
+    uint32_t index = hash % CACHE_SIZE;
+
+    // --- Cache Lookup ---
+    DisplayCacheEntry *entry = viewer->display_cache->entries[index];
+    while (entry) {
+        if (entry->hash == hash && strcmp(entry->original_string, original) == 0) {
+            // Found the entry, now find the right truncated version
+            for (int i = 0; i < entry->truncated_count; i++) {
+                if (entry->truncated[i].width == width) {
+                    return entry->truncated[i].str;
+                }
+            }
+            // If we are here, we have the original string but not this specific width
+            break; 
+        }
+        entry = entry->next;
+    }
+
+    // --- Cache Miss ---
+    char truncated_buffer[MAX_FIELD_LEN];
+    truncate_str(original, truncated_buffer, width);
+
+    if (entry) { // Entry exists, but not this truncated version
+        if (entry->truncated_count < MAX_TRUNCATED_VERSIONS) {
+            int i = entry->truncated_count++;
+            entry->truncated[i].width = width;
+            entry->truncated[i].str = strdup(truncated_buffer);
+            return entry->truncated[i].str;
+        }
+        // Fallback: cannot store more versions. Copy to static buffer and return.
+        strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+        static_buffer[MAX_FIELD_LEN - 1] = '\0';
+        return static_buffer;
+    } else { // No entry for this string, create a new one
+        DisplayCacheEntry *new_entry = malloc(sizeof(DisplayCacheEntry));
+        new_entry->hash = hash;
+        new_entry->original_string = strdup(original);
+        new_entry->display_width = calculate_display_width(original);
+        new_entry->truncated_count = 1;
+        new_entry->truncated[0].width = width;
+        new_entry->truncated[0].str = strdup(truncated_buffer);
+        
+        // Add to hash table (handle collision)
+        new_entry->next = viewer->display_cache->entries[index];
+        viewer->display_cache->entries[index] = new_entry;
+
+        return new_entry->truncated[0].str;
+    }
 }
 
 // Unified function to draw any CSV line (header or data)
@@ -56,24 +131,25 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
             }
         }
         
-        char truncated_field[MAX_FIELD_LEN];
-        
-        // Zero-copy field rendering - render field on-demand
         char rendered_field[MAX_FIELD_LEN];
         render_field(&viewer->fields[col], rendered_field, sizeof(rendered_field));
         
-        truncate_to_width(rendered_field, truncated_field, col_width);
+        const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         
         if (is_header && col_width < original_col_width) {
             // Pad truncated header fields with spaces
-            int text_len = strlen(truncated_field);
+            int text_len = strlen(display_string);
+            char padded_field[MAX_FIELD_LEN];
+            strcpy(padded_field, display_string);
             for (int i = text_len; i < col_width; i++) {
-                truncated_field[i] = ' ';
+                padded_field[i] = ' ';
             }
-            truncated_field[col_width] = '\0';
+            padded_field[col_width] = '\0';
+            mvaddstr(y, x, padded_field);
+        } else {
+            mvaddstr(y, x, display_string);
         }
-        
-        mvaddstr(y, x, truncated_field);
+
         x += col_width;
         
         // Unified separator logic - same for both header and data
