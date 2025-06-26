@@ -1,4 +1,27 @@
 #include "viewer.h"
+#include <wchar.h>
+#include <string.h>
+
+// Helper function to truncate a string to a specific display width
+void truncate_to_width(const char* src, char* dest, int width) {
+    wchar_t wcs[MAX_FIELD_LEN];
+    mbstowcs(wcs, src, MAX_FIELD_LEN);
+    
+    int current_width = 0;
+    int i = 0;
+    for (i = 0; wcs[i] != '\0'; ++i) {
+        int char_width = wcwidth(wcs[i]);
+        if (char_width < 0) char_width = 1; // Fallback for control chars
+        
+        if (current_width + char_width > width) {
+            break;
+        }
+        current_width += char_width;
+    }
+    wcs[i] = '\0';
+    
+    wcstombs(dest, wcs, MAX_FIELD_LEN);
+}
 
 void display_data(CSVViewer *viewer, int start_row, int start_col) {
     int rows, cols;
@@ -6,120 +29,112 @@ void display_data(CSVViewer *viewer, int start_row, int start_col) {
     
     clear();
     
-    int display_rows = rows - 1; // Leave space for status line
+    int display_rows = rows - 1;
     int screen_start_row = 0;
     
-    // Show persistent header if enabled
     if (show_header) {
-        char formatted_line[BUFFER_SIZE * 2] = "";
-        format_line_for_width(viewer, 0, formatted_line, sizeof(formatted_line), start_col, cols);
+        int x = 0;
+        int num_fields = parse_line(viewer, viewer->line_offsets[0], viewer->fields, MAX_COLS);
         
-        // Display header
+        // Draw header with underline attribute
         attron(COLOR_PAIR(1) | A_UNDERLINE);
-        mvprintw(0, 0, "%s", formatted_line);
-        attroff(COLOR_PAIR(1) | A_UNDERLINE);
-        screen_start_row = 1; // Data starts from row 1
-    }
-    
-    // Display data rows
-    for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
-        int file_line;
-        if (show_header) {
-            // With persistent header: start_row=0 shows file line 1, etc.
-            file_line = start_row + screen_row;
-        } else {
-            // Without header: start_row=0 shows file line 0, etc.
-            file_line = start_row + screen_row - screen_start_row;
+        
+        // First, fill the entire header row with spaces to create continuous underline
+        for (int i = 0; i < cols; i++) {
+            mvaddch(0, i, ' ');
         }
         
-        if (file_line >= viewer->num_lines) break;
+        // Then draw the actual header text over the underlined spaces
+        for (int col = start_col; col < num_fields; col++) {
+            if (x >= cols) break;
+            
+            int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
+            int original_col_width = col_width;
+            
+            // Check if we have enough space for this column + separator (if not last)
+            int separator_space = (col < num_fields - 1) ? 3 : 0;
+            int needed_space = col_width + separator_space;
+            if (x + needed_space > cols) {
+                // If this would overflow, use ALL remaining space for this column
+                col_width = cols - x;
+                if (col_width <= 0) break; // No space left
+            }
+            
+            char truncated_field[MAX_FIELD_LEN];
+            truncate_to_width(viewer->fields[col], truncated_field, col_width);
+            
+            // If this is a truncated field, pad it with spaces to prevent overlap
+            if (col_width < original_col_width) {
+                // For truncated columns, we need to clear the remaining space
+                int text_len = strlen(truncated_field);
+                for (int i = text_len; i < col_width; i++) {
+                    truncated_field[i] = ' ';
+                }
+                truncated_field[col_width] = '\0';
+            }
+            
+            mvaddstr(0, x, truncated_field);
+            
+            // Always advance by the full column width to prevent overlap
+            // The spaces from our initial fill will show through for padding
+            x += col_width;
+            
+            // Only draw separator if:
+            // 1. Not the last column AND
+            // 2. We have space for the separator AND 
+            // 3. The column wasn't truncated (meaning we can fit more content)
+            if (col < num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+                mvaddstr(0, x, separator);
+                x += 3; // Use display width (3), not byte length
+            }
+            // If this column was truncated and uses all remaining space, we're done
+            else if (col_width != original_col_width && x >= cols) {
+                break;
+            }
+        }
         
-        char formatted_line[BUFFER_SIZE * 2] = "";
-        format_line_for_width(viewer, file_line, formatted_line, sizeof(formatted_line), start_col, cols);
-        
-        // Display the formatted line
-        mvprintw(screen_row, 0, "%s", formatted_line);
+        attroff(COLOR_PAIR(1) | A_UNDERLINE);
+        screen_start_row = 1;
     }
     
-    // Status line with debug info
-    char status_line[BUFFER_SIZE];
-    char temp_line[BUFFER_SIZE * 2] = "";
-    format_line_for_width(viewer, 0, temp_line, sizeof(temp_line), start_col, cols);
-    int actual_len = strlen(temp_line);
-    int wasted = cols - actual_len;
-    float waste_percent = (cols > 0) ? ((float)wasted / cols * 100) : 0;
+    for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
+        int file_line = start_row + screen_row - (show_header ? 0 : screen_start_row);
+        if (file_line >= viewer->num_lines) break;
 
-    snprintf(status_line, sizeof(status_line), 
-            "Lines %d-%d | Col: %d | Screen: %d, Used: %d, Waste: %d (%.1f%%) | q: quit", 
-            start_row + 1, 
-            start_row + display_rows > viewer->num_lines ? viewer->num_lines : start_row + display_rows,
-            start_col + 1, cols, actual_len, wasted, waste_percent);
+        int x = 0;
+        int num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
+        for (int col = start_col; col < num_fields; col++) {
+            if (x >= cols) break;
+            
+            int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
+            
+            char truncated_field[MAX_FIELD_LEN];
+            truncate_to_width(viewer->fields[col], truncated_field, col_width);
+            mvaddstr(screen_row, x, truncated_field);
+            
+            x += col_width;
+            if (x < cols && col < num_fields - 1) {
+                mvaddstr(screen_row, x, separator);
+            }
+            x += 3; // Use display width (3), not byte length
+        }
+    }
     
-    mvprintw(rows - 1, 0, "%-.*s", cols, status_line);
+    mvprintw(rows - 1, 0, "Lines %d-%d of %d | Row: %d | Col: %d | q: quit | h: help",
+             start_row + 1,
+             start_row + display_rows > viewer->num_lines ? viewer->num_lines : start_row + display_rows,
+             viewer->num_lines, start_row + 1, start_col + 1);
     
     refresh();
-}
-
-void format_line_for_width(CSVViewer *viewer, int line_index, char *output, int max_output_len, int start_col, int target_width) {
-    output[0] = '\0';
-    
-    int num_fields = parse_line(viewer, viewer->line_offsets[line_index], 
-                              viewer->fields, MAX_COLS);
-    
-    int used_width = 0;
-    // The display width of the separator is always 3 characters on screen,
-    // even though its byte-length might be different (e.g., 5 for " │ ").
-    int sep_display_width = 3;
-    
-    for (int col = start_col; col < num_fields; col++) {
-        char sanitized_field[MAX_FIELD_LEN];
-        sanitize_field(sanitized_field, viewer->fields[col], MAX_FIELD_LEN - 1);
-        
-        int col_width = (col < viewer->num_cols && viewer->col_widths) ? 
-                       viewer->col_widths[col] : 12;
-        
-        // Check if full column + separator fits, using DISPLAY widths
-        int space_needed = col_width + (col < num_fields - 1 ? sep_display_width : 0);
-        
-        if (used_width + space_needed <= target_width) {
-            char formatted_field[64];
-            snprintf(formatted_field, sizeof(formatted_field), "%-*.*s", 
-                    col_width, col_width, sanitized_field);
-            strncat(output, formatted_field, max_output_len - strlen(output) - 1);
-            used_width += col_width;
-            
-            if (col < num_fields - 1) {
-                strncat(output, separator, max_output_len - strlen(output) - 1);
-                used_width += sep_display_width;
-            }
-        } else {
-            int remaining = target_width - used_width;
-            if (remaining >= 4) { 
-                char formatted_field[64];
-                snprintf(formatted_field, sizeof(formatted_field), "%-*.*s", 
-                        remaining, remaining, sanitized_field);
-                strncat(output, formatted_field, max_output_len - strlen(output) - 1);
-            }
-            break; 
-        }
-    }
-}
-
-void format_line(CSVViewer *viewer, int line_index, char *output, int max_output_len) {
-    format_line_for_width(viewer, line_index, output, max_output_len, 0, 120);
 }
 
 void sanitize_field(char *dest, const char *src, int max_len) {
     int j = 0;
     for (int i = 0; src[i] != '\0' && j < max_len; i++) {
         unsigned char c = src[i];
-        
-        // Only filter out control characters that mess up terminal display
         if (c < 32 || c == 127) {
-            // Replace control chars with space
             dest[j++] = ' ';
         } else {
-            // Keep everything else (printable ASCII + Unicode)
             dest[j++] = c;
         }
     }

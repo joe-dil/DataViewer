@@ -49,8 +49,6 @@ char detect_delimiter(const char *data, size_t length);
 
 // Display functions (display.c)
 void display_data(CSVViewer *viewer, int start_row, int start_col);
-void format_line(CSVViewer *viewer, int line_index, char *output, int max_output_len);
-void format_line_for_width(CSVViewer *viewer, int line_index, char *output, int max_output_len, int start_col, int target_width);
 void show_help(void);
 void sanitize_field(char *dest, const char *src, int max_len);
 

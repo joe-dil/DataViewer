@@ -71,13 +71,13 @@ void run_viewer(CSVViewer *viewer) {
                 
             case KEY_LEFT:
                 if (start_col > 0) {
-                    start_col--; // Move to previous column
+                    start_col--;
                 }
                 break;
                 
             case KEY_RIGHT:
                 if (start_col < viewer->num_cols - 1) {
-                    start_col++; // Move to next column
+                    start_col++;
                 }
                 break;
                 

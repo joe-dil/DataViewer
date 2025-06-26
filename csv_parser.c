@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include <wchar.h>
 
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
@@ -62,11 +63,18 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
             viewer->num_cols = num_fields;
         }
         
-        // Track column widths
+        // Track column widths using display width, not byte length
         for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
-            int field_len = strlen(viewer->fields[col]);
-            if (field_len > temp_widths[col]) {
-                temp_widths[col] = field_len;
+            wchar_t wcs[MAX_FIELD_LEN];
+            mbstowcs(wcs, viewer->fields[col], MAX_FIELD_LEN);
+            int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+            
+            if (display_width < 0) { // Fallback for invalid chars
+                display_width = strlen(viewer->fields[col]);
+            }
+
+            if (display_width > temp_widths[col]) {
+                temp_widths[col] = display_width;
             }
         }
     }
