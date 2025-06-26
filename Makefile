@@ -1,25 +1,30 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -O2
+CFLAGS = -Wall -Wextra -std=c99 -O2 -Iinclude
 LIBS = -lncurses
-TARGET = viewer
-SOURCES = main.c csv_parser.c display.c navigation.c
-OBJECTS = $(SOURCES:.c=.o)
+SRCDIR = src
+OBJDIR = obj
+BINDIR = bin
+TARGET = $(BINDIR)/viewer
+SOURCES = $(wildcard $(SRCDIR)/*.c)
+OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
-# Default target
+.PHONY: all clean test
+
+all: $(TARGET)
+
 $(TARGET): $(OBJECTS)
+	@mkdir -p $(@D)
 	$(CC) $(OBJECTS) -o $(TARGET) $(LIBS)
 
-# Compile individual source files
-%.o: %.c viewer.h
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean build artifacts
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	@rm -rf $(OBJDIR) $(BINDIR)
 
-# Test with sample data
-test: $(TARGET)
-	./$(TARGET) test.csv
+test: all
+	@./$(TARGET) "Bird Strikes Test.csv"
 
 # Install dependencies (for systems that need ncurses dev packages)
 install-deps:
