@@ -32,10 +32,11 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         viewer->delimiter = delimiter;
     }
     
-    viewer->fields = malloc(MAX_COLS * sizeof(char*));
-    for (int i = 0; i < MAX_COLS; i++) {
-        viewer->fields[i] = malloc(MAX_FIELD_LEN);
-    }
+    // Allocate zero-copy field descriptors instead of field buffers
+    viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    
+    // Single render buffer for on-demand field rendering
+    viewer->render_buffer = malloc(MAX_FIELD_LEN);
     
     scan_file(viewer);
     
@@ -59,22 +60,10 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
             viewer->num_cols = num_fields;
         }
         
-        // Track column widths using display width, not byte length
+        // Track column widths using zero-copy field width calculation
         for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
-            // Create a copy and clean it for accurate width measurement
-            char clean_field[MAX_FIELD_LEN];
-            strncpy(clean_field, viewer->fields[col], MAX_FIELD_LEN - 1);
-            clean_field[MAX_FIELD_LEN - 1] = '\0';
-            clean_field_for_display(clean_field);
+            int display_width = calculate_field_display_width(&viewer->fields[col]);
             
-            wchar_t wcs[MAX_FIELD_LEN];
-            mbstowcs(wcs, clean_field, MAX_FIELD_LEN);
-            int display_width = wcswidth(wcs, MAX_FIELD_LEN);
-            
-            if (display_width < 0) { // Fallback for invalid chars
-                display_width = strlen(clean_field);
-            }
-
             if (display_width > temp_widths[col]) {
                 temp_widths[col] = display_width;
             }
@@ -99,10 +88,10 @@ void cleanup_viewer(CSVViewer *viewer) {
         close(viewer->fd);
     }
     if (viewer->fields) {
-        for (int i = 0; i < MAX_COLS; i++) {
-            free(viewer->fields[i]);
-        }
         free(viewer->fields);
+    }
+    if (viewer->render_buffer) {
+        free(viewer->render_buffer);
     }
     if (viewer->line_offsets) {
         free(viewer->line_offsets);
@@ -177,17 +166,21 @@ void scan_file(CSVViewer *viewer) {
     }
 }
 
-int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields) {
+// Zero-copy parser - returns field descriptors pointing into original data
+int parse_line(CSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
     if (offset >= viewer->length) return 0;
     
     int field_count = 0;
-    int field_pos = 0;
     int in_quotes = 0;
     size_t i = offset;
+    size_t field_start = offset;
+    int has_escapes = 0;
     
-    // Clear all fields
+    // Clear all field descriptors
     for (int j = 0; j < max_fields; j++) {
-        fields[j][0] = '\0';
+        fields[j].start = NULL;
+        fields[j].length = 0;
+        fields[j].needs_unescaping = 0;
     }
     
     while (i < viewer->length && field_count < max_fields) {
@@ -196,10 +189,8 @@ int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields) 
         if (c == '"') {
             // Check for escaped quote (double quote)
             if (in_quotes && i + 1 < viewer->length && viewer->data[i + 1] == '"') {
-                // Escaped quote - add one quote to field and skip both
-                if (field_pos < MAX_FIELD_LEN - 1) {
-                    fields[field_count][field_pos++] = '"';
-                }
+                // Escaped quote - mark field as needing unescaping
+                has_escapes = 1;
                 i += 2; // Skip both quotes
                 continue;
             } else {
@@ -207,42 +198,115 @@ int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields) 
                 in_quotes = !in_quotes;
             }
         } else if (c == viewer->delimiter && !in_quotes) {
-            // End current field
-            fields[field_count][field_pos] = '\0';
+            // End current field - store field descriptor
+            fields[field_count].start = viewer->data + field_start;
+            fields[field_count].length = i - field_start;
+            fields[field_count].needs_unescaping = has_escapes;
+            
             field_count++;
-            field_pos = 0;
+            field_start = i + 1; // Start next field after delimiter
+            has_escapes = 0;
         } else if (c == '\n') {
             if (!in_quotes) {
                 // End of record
                 break;
-            } else {
-                // Newline within quotes - treat as regular character
-                if (field_pos < MAX_FIELD_LEN - 1) {
-                    fields[field_count][field_pos++] = ' '; // Convert to space for display
-                }
             }
-        } else if (field_pos < MAX_FIELD_LEN - 1) {
-            // Add character to current field
-            fields[field_count][field_pos++] = c;
+            // Newline within quotes - continue parsing
         }
         i++;
     }
     
     // Finalize last field
     if (field_count < max_fields) {
-        fields[field_count][field_pos] = '\0';
+        fields[field_count].start = viewer->data + field_start;
+        fields[field_count].length = i - field_start;
+        fields[field_count].needs_unescaping = has_escapes;
         field_count++;
     }
     
     return field_count;
 }
 
-// Clean field for display - remove surrounding quotes but preserve content
-void clean_field_for_display(char *field) {
-    int len = strlen(field);
-    if (len >= 2 && field[0] == '"' && field[len-1] == '"') {
-        // Remove surrounding quotes
-        memmove(field, field + 1, len - 2);
-        field[len - 2] = '\0';
+// Render a field on-demand, handling quote removal and unescaping
+char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
+    if (!field->start || field->length == 0) {
+        buffer[0] = '\0';
+        return buffer;
+    }
+    
+    const char *src = field->start;
+    size_t src_len = field->length;
+    size_t dst_pos = 0;
+    
+    // Remove surrounding quotes if present
+    if (src_len >= 2 && src[0] == '"' && src[src_len-1] == '"') {
+        src++;
+        src_len -= 2;
+    }
+    
+    if (field->needs_unescaping) {
+        // Handle escaped quotes
+        for (size_t i = 0; i < src_len && dst_pos < buffer_size - 1; i++) {
+            if (src[i] == '"' && i + 1 < src_len && src[i + 1] == '"') {
+                // Escaped quote - add one quote and skip the second
+                buffer[dst_pos++] = '"';
+                i++; // Skip the second quote
+            } else if (src[i] == '\n') {
+                // Convert newlines in quoted fields to spaces for display
+                buffer[dst_pos++] = ' ';
+            } else {
+                buffer[dst_pos++] = src[i];
+            }
+        }
+    } else {
+        // Simple copy for fields without escapes
+        size_t copy_len = src_len < buffer_size - 1 ? src_len : buffer_size - 1;
+        memcpy(buffer, src, copy_len);
+        dst_pos = copy_len;
+    }
+    
+    buffer[dst_pos] = '\0';
+    return buffer;
+}
+
+// Calculate display width of a field without fully rendering it
+int calculate_field_display_width(const FieldDesc *field) {
+    if (!field->start || field->length == 0) {
+        return 0;
+    }
+    
+    // Quick estimation - for most fields this will be accurate
+    size_t raw_len = field->length;
+    
+    // Remove surrounding quotes from length calculation
+    if (raw_len >= 2 && field->start[0] == '"' && field->start[raw_len-1] == '"') {
+        raw_len -= 2;
+    }
+    
+    if (field->needs_unescaping) {
+        // For fields with escapes, we need to render to get accurate width
+        // This is the slow path, but only for fields with escaped quotes
+        char temp_buffer[MAX_FIELD_LEN];
+        render_field(field, temp_buffer, sizeof(temp_buffer));
+        
+        wchar_t wcs[MAX_FIELD_LEN];
+        mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
+        int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+        
+        return display_width < 0 ? strlen(temp_buffer) : display_width;
+    } else {
+        // Fast path - no escaping needed, just measure raw content
+        wchar_t wcs[MAX_FIELD_LEN];
+        size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
+        
+        // Create temporary null-terminated string for mbstowcs
+        char temp[MAX_FIELD_LEN];
+        memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
+        temp[copy_len] = '\0';
+        
+        mbstowcs(wcs, temp, MAX_FIELD_LEN);
+        int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+        
+        return display_width < 0 ? copy_len : display_width;
     }
 } 

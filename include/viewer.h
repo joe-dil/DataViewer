@@ -23,19 +23,27 @@ extern int show_header;
 extern int supports_unicode;
 extern const char* separator;
 
+// Zero-copy field descriptor
+typedef struct {
+    const char *start;  // Pointer into mmap'd data
+    size_t length;      // Length of field (may include quotes/escapes)
+    int needs_unescaping; // Whether field contains escaped quotes
+} FieldDesc;
+
 // Core data structure
 typedef struct {
     char *data;
     size_t length;
     int fd;
     char delimiter;
-    char **fields;
+    FieldDesc *fields;  // Zero-copy field descriptors
     int num_fields;
     size_t *line_offsets;
     int num_lines;
     int capacity;
     int *col_widths;
     int num_cols;
+    char *render_buffer;  // Single buffer for rendering fields when needed
 } CSVViewer;
 
 // Function declarations
@@ -44,9 +52,10 @@ typedef struct {
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter);
 void cleanup_viewer(CSVViewer *viewer);
 void scan_file(CSVViewer *viewer);
-int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields);
+int parse_line(CSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
 char detect_delimiter(const char *data, size_t length);
-void clean_field_for_display(char *field);
+char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);
+int calculate_field_display_width(const FieldDesc *field);
 
 // Display functions (display.c)
 void display_data(CSVViewer *viewer, int start_row, int start_col);

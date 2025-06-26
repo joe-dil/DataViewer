@@ -58,13 +58,11 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
         
         char truncated_field[MAX_FIELD_LEN];
         
-        // Create a copy of the field and clean it for display
-        char clean_field[MAX_FIELD_LEN];
-        strncpy(clean_field, viewer->fields[col], MAX_FIELD_LEN - 1);
-        clean_field[MAX_FIELD_LEN - 1] = '\0';
-        clean_field_for_display(clean_field);
+        // Zero-copy field rendering - render field on-demand
+        char rendered_field[MAX_FIELD_LEN];
+        render_field(&viewer->fields[col], rendered_field, sizeof(rendered_field));
         
-        truncate_to_width(clean_field, truncated_field, col_width);
+        truncate_to_width(rendered_field, truncated_field, col_width);
         
         if (is_header && col_width < original_col_width) {
             // Pad truncated header fields with spaces
