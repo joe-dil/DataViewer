@@ -2,11 +2,10 @@
 
 // Simple, robust separator finding functions
 int find_next_separator(const char *line, int start_pos) {
-    const char *separator = " | ";
-    int sep_len = 3;
+    int sep_len = strlen(separator);
     int line_len = strlen(line);
     
-    // Search for " | " starting from start_pos
+    // Search for separator starting from start_pos
     for (int i = start_pos; i <= line_len - sep_len; i++) {
         if (strncmp(line + i, separator, sep_len) == 0) {
             return i + sep_len; // Return position AFTER the separator
@@ -16,10 +15,9 @@ int find_next_separator(const char *line, int start_pos) {
 }
 
 int find_prev_separator(const char *line, int start_pos) {
-    const char *separator = " | ";
-    int sep_len = 3;
+    int sep_len = strlen(separator);
     
-    // Search backwards for " | "
+    // Search backwards for separator
     for (int i = start_pos - sep_len; i >= 0; i--) {
         if (strncmp(line + i, separator, sep_len) == 0) {
             return i + sep_len; // Return position AFTER the separator
@@ -72,37 +70,16 @@ void run_viewer(CSVViewer *viewer) {
                 break;
                 
             case KEY_LEFT:
-            {
-                // Find the previous field start (after previous separator)
-                char temp_line[BUFFER_SIZE * 2] = "";
-                format_line(viewer, start_row, temp_line, sizeof(temp_line));
-                
                 if (start_col > 0) {
-                    // Move back to find the previous separator
-                    int prev_sep = find_prev_separator(temp_line, start_col - 1);
-                    start_col = prev_sep; // Position after previous separator
-                } else {
-                    start_col = 0; // Already at beginning
+                    start_col--; // Move to previous column
                 }
                 break;
-            }
                 
             case KEY_RIGHT:
-            {
-                // Find the next field start (after next separator)
-                char temp_line[BUFFER_SIZE * 2] = "";
-                format_line(viewer, start_row, temp_line, sizeof(temp_line));
-                int line_length = strlen(temp_line);
-                
-                getmaxyx(stdscr, rows, cols);
-                int max_scroll = line_length - cols + 5;
-                
-                // Find next separator from current position
-                int next_sep = find_next_separator(temp_line, start_col);
-                start_col = next_sep > max_scroll ? max_scroll : next_sep;
-                if (start_col < 0) start_col = 0;
+                if (start_col < viewer->num_cols - 1) {
+                    start_col++; // Move to next column
+                }
                 break;
-            }
                 
             case KEY_PPAGE: // Page Up
                 start_row = (start_row - page_size < 0) ? 0 : start_row - page_size;

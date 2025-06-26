@@ -71,11 +71,11 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         }
     }
     
-    // Copy calculated widths (more aggressive width usage)
+    // Copy calculated widths with a cap of 16
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
     for (int i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = temp_widths[i] > 30 ? 30 :  // Increased max width 
-                               (temp_widths[i] < 6 ? 6 : temp_widths[i]);  // Reduced min width
+        viewer->col_widths[i] = temp_widths[i] > 16 ? 16 :  // Cap at 16 chars max
+                               (temp_widths[i] < 4 ? 4 : temp_widths[i]);  // Min 4 chars
     }
     
     return 0;

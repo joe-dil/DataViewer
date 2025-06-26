@@ -12,14 +12,11 @@ void display_data(CSVViewer *viewer, int start_row, int start_col) {
     // Show persistent header if enabled
     if (show_header) {
         char formatted_line[BUFFER_SIZE * 2] = "";
-        format_line(viewer, 0, formatted_line, sizeof(formatted_line));
+        format_line_for_width(viewer, 0, formatted_line, sizeof(formatted_line), start_col, cols);
         
-        // Display header starting from start_col character position
+        // Display header
         attron(COLOR_PAIR(1) | A_UNDERLINE);
-        int line_len = strlen(formatted_line);
-        if (start_col < line_len) {
-            mvprintw(0, 0, "%-.*s", cols, formatted_line + start_col);
-        }
+        mvprintw(0, 0, "%s", formatted_line);
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
         screen_start_row = 1; // Data starts from row 1
     }
@@ -38,45 +35,78 @@ void display_data(CSVViewer *viewer, int start_row, int start_col) {
         if (file_line >= viewer->num_lines) break;
         
         char formatted_line[BUFFER_SIZE * 2] = "";
-        format_line(viewer, file_line, formatted_line, sizeof(formatted_line));
+        format_line_for_width(viewer, file_line, formatted_line, sizeof(formatted_line), start_col, cols);
         
-        // Display line starting from start_col character position
-        int line_len = strlen(formatted_line);
-        if (start_col < line_len) {
-            mvprintw(screen_row, 0, "%-.*s", cols, formatted_line + start_col);
-        }
+        // Display the formatted line
+        mvprintw(screen_row, 0, "%s", formatted_line);
     }
     
-    // Status line
-    mvprintw(rows - 1, 0, "Lines %d-%d of %d | Row: %d | Col: %d | q: quit | h: help", 
-             start_row + 1, 
-             start_row + display_rows > viewer->num_lines ? viewer->num_lines : start_row + display_rows,
-             viewer->num_lines, start_row + 1, start_col + 1);
+    // Status line with debug info
+    char status_line[BUFFER_SIZE];
+    char temp_line[BUFFER_SIZE * 2] = "";
+    format_line_for_width(viewer, 0, temp_line, sizeof(temp_line), start_col, cols);
+    int actual_len = strlen(temp_line);
+    int wasted = cols - actual_len;
+    float waste_percent = (cols > 0) ? ((float)wasted / cols * 100) : 0;
+
+    snprintf(status_line, sizeof(status_line), 
+            "Lines %d-%d | Col: %d | Screen: %d, Used: %d, Waste: %d (%.1f%%) | q: quit", 
+            start_row + 1, 
+            start_row + display_rows > viewer->num_lines ? viewer->num_lines : start_row + display_rows,
+            start_col + 1, cols, actual_len, wasted, waste_percent);
+    
+    mvprintw(rows - 1, 0, "%-.*s", cols, status_line);
     
     refresh();
 }
 
-void format_line(CSVViewer *viewer, int line_index, char *output, int max_output_len) {
-    output[0] = '\0'; // Start with empty string
+void format_line_for_width(CSVViewer *viewer, int line_index, char *output, int max_output_len, int start_col, int target_width) {
+    output[0] = '\0';
     
     int num_fields = parse_line(viewer, viewer->line_offsets[line_index], 
                               viewer->fields, MAX_COLS);
     
-    for (int col = 0; col < num_fields; col++) {
+    int used_width = 0;
+    // The display width of the separator is always 3 characters on screen,
+    // even though its byte-length might be different (e.g., 5 for " │ ").
+    int sep_display_width = 3;
+    
+    for (int col = start_col; col < num_fields; col++) {
         char sanitized_field[MAX_FIELD_LEN];
         sanitize_field(sanitized_field, viewer->fields[col], MAX_FIELD_LEN - 1);
         
-        // Use fixed width for simplicity - 16 chars per field
-        char formatted_field[32];
-        snprintf(formatted_field, sizeof(formatted_field), "%-16.16s", sanitized_field);
+        int col_width = (col < viewer->num_cols && viewer->col_widths) ? 
+                       viewer->col_widths[col] : 12;
         
-        // Efficient concatenation
-        strncat(output, formatted_field, max_output_len - strlen(output) - 1);
+        // Check if full column + separator fits, using DISPLAY widths
+        int space_needed = col_width + (col < num_fields - 1 ? sep_display_width : 0);
         
-        if (col < num_fields - 1) {
-            strncat(output, " | ", max_output_len - strlen(output) - 1);
+        if (used_width + space_needed <= target_width) {
+            char formatted_field[64];
+            snprintf(formatted_field, sizeof(formatted_field), "%-*.*s", 
+                    col_width, col_width, sanitized_field);
+            strncat(output, formatted_field, max_output_len - strlen(output) - 1);
+            used_width += col_width;
+            
+            if (col < num_fields - 1) {
+                strncat(output, separator, max_output_len - strlen(output) - 1);
+                used_width += sep_display_width;
+            }
+        } else {
+            int remaining = target_width - used_width;
+            if (remaining >= 4) { 
+                char formatted_field[64];
+                snprintf(formatted_field, sizeof(formatted_field), "%-*.*s", 
+                        remaining, remaining, sanitized_field);
+                strncat(output, formatted_field, max_output_len - strlen(output) - 1);
+            }
+            break; 
         }
     }
+}
+
+void format_line(CSVViewer *viewer, int line_index, char *output, int max_output_len) {
+    format_line_for_width(viewer, line_index, output, max_output_len, 0, 120);
 }
 
 void sanitize_field(char *dest, const char *src, int max_len) {
