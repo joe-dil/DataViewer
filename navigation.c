@@ -1,5 +1,60 @@
 #include "viewer.h"
 
+static void handle_input(int ch, CSVViewer *viewer, int *start_row, int *start_col, int page_size) {
+    switch (ch) {
+        case 'q':
+        case 'Q':
+        case 27: // ESC key
+            break; // Will be handled in run_viewer to exit
+            
+        case 'h':
+        case 'H':
+            show_help();
+            break;
+            
+        case KEY_UP:
+            if (*start_row > 0) (*start_row)--;
+            break;
+            
+        case KEY_DOWN:
+            if (*start_row < viewer->num_lines - 1) {
+                (*start_row)++;
+            }
+            break;
+            
+        case KEY_LEFT:
+            if (*start_col > 0) {
+                (*start_col)--;
+            }
+            break;
+            
+        case KEY_RIGHT:
+            if (*start_col < viewer->num_cols - 1) {
+                (*start_col)++;
+            }
+            break;
+            
+        case KEY_PPAGE: // Page Up
+            *start_row = (*start_row - page_size < 0) ? 0 : *start_row - page_size;
+            break;
+            
+        case KEY_NPAGE: // Page Down
+            *start_row = (*start_row + page_size >= viewer->num_lines) ? 
+                       viewer->num_lines - 1 : *start_row + page_size;
+            break;
+            
+        case KEY_HOME:
+            *start_row = 0;
+            *start_col = 0;
+            break;
+            
+        case KEY_END:
+            *start_row = viewer->num_lines - page_size;
+            if (*start_row < 0) *start_row = 0;
+            break;
+    }
+}
+
 void run_viewer(CSVViewer *viewer) {
     int start_row = 0, start_col = 0;
     int ch;
@@ -24,63 +79,13 @@ void run_viewer(CSVViewer *viewer) {
         display_data(viewer, start_row, start_col);
         ch = getch();
         
-        switch (ch) {
-            case 'q':
-            case 'Q':
-                goto cleanup;
-                
-            case 'h':
-            case 'H':
-                show_help();
-                break;
-                
-            case KEY_UP:
-                if (start_row > 0) start_row--;
-                break;
-                
-            case KEY_DOWN:
-                if (start_row < viewer->num_lines - 1) {
-                    start_row++;
-                }
-                break;
-                
-            case KEY_LEFT:
-                if (start_col > 0) {
-                    start_col--;
-                }
-                break;
-                
-            case KEY_RIGHT:
-                if (start_col < viewer->num_cols - 1) {
-                    start_col++;
-                }
-                break;
-                
-            case KEY_PPAGE: // Page Up
-                start_row = (start_row - page_size < 0) ? 0 : start_row - page_size;
-                break;
-                
-            case KEY_NPAGE: // Page Down
-                start_row = (start_row + page_size >= viewer->num_lines) ? 
-                           viewer->num_lines - 1 : start_row + page_size;
-                break;
-                
-            case KEY_HOME:
-                start_row = 0;
-                start_col = 0;
-                break;
-                
-            case KEY_END:
-                start_row = viewer->num_lines - page_size;
-                if (start_row < 0) start_row = 0;
-                break;
-                
-            case 27: // ESC key
-                goto cleanup;
+        if (ch == 'q' || ch == 'Q' || ch == 27) {
+            break;
         }
+        
+        handle_input(ch, viewer, &start_row, &start_col, page_size);
     }
     
-cleanup:
     curs_set(1); // Restore cursor
     endwin();
 } 

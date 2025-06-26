@@ -53,6 +53,5 @@ void show_help(void);
 
 // Navigation functions (navigation.c)
 void run_viewer(CSVViewer *viewer);
-void handle_input(CSVViewer *viewer, int *start_row, int *start_col);
 
 #endif // VIEWER_H 
