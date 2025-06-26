@@ -46,6 +46,7 @@ void cleanup_viewer(CSVViewer *viewer);
 void scan_file(CSVViewer *viewer);
 int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields);
 char detect_delimiter(const char *data, size_t length);
+void clean_field_for_display(char *field);
 
 // Display functions (display.c)
 void display_data(CSVViewer *viewer, int start_row, int start_col);

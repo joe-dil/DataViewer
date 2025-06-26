@@ -61,12 +61,18 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         
         // Track column widths using display width, not byte length
         for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
+            // Create a copy and clean it for accurate width measurement
+            char clean_field[MAX_FIELD_LEN];
+            strncpy(clean_field, viewer->fields[col], MAX_FIELD_LEN - 1);
+            clean_field[MAX_FIELD_LEN - 1] = '\0';
+            clean_field_for_display(clean_field);
+            
             wchar_t wcs[MAX_FIELD_LEN];
-            mbstowcs(wcs, viewer->fields[col], MAX_FIELD_LEN);
+            mbstowcs(wcs, clean_field, MAX_FIELD_LEN);
             int display_width = wcswidth(wcs, MAX_FIELD_LEN);
             
             if (display_width < 0) { // Fallback for invalid chars
-                display_width = strlen(viewer->fields[col]);
+                display_width = strlen(clean_field);
             }
 
             if (display_width > temp_widths[col]) {
@@ -136,6 +142,7 @@ void scan_file(CSVViewer *viewer) {
     viewer->num_lines = 0;
     viewer->line_offsets[viewer->num_lines++] = 0;
 
+    // Fast line scanning using memchr - we'll handle multi-line records during parsing
     const size_t buffer_size = 4096;
     size_t temp_offsets[buffer_size];
     size_t temp_count = 0;
@@ -178,21 +185,42 @@ int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields) 
     int in_quotes = 0;
     size_t i = offset;
     
-    // Clear ALL fields, not just the first one
+    // Clear all fields
     for (int j = 0; j < max_fields; j++) {
         fields[j][0] = '\0';
     }
     
-    while (i < viewer->length && viewer->data[i] != '\n' && field_count < max_fields) {
+    while (i < viewer->length && field_count < max_fields) {
         char c = viewer->data[i];
         
         if (c == '"') {
-            in_quotes = !in_quotes;
+            // Check for escaped quote (double quote)
+            if (in_quotes && i + 1 < viewer->length && viewer->data[i + 1] == '"') {
+                // Escaped quote - add one quote to field and skip both
+                if (field_pos < MAX_FIELD_LEN - 1) {
+                    fields[field_count][field_pos++] = '"';
+                }
+                i += 2; // Skip both quotes
+                continue;
+            } else {
+                // Toggle quote state
+                in_quotes = !in_quotes;
+            }
         } else if (c == viewer->delimiter && !in_quotes) {
             // End current field
             fields[field_count][field_pos] = '\0';
             field_count++;
             field_pos = 0;
+        } else if (c == '\n') {
+            if (!in_quotes) {
+                // End of record
+                break;
+            } else {
+                // Newline within quotes - treat as regular character
+                if (field_pos < MAX_FIELD_LEN - 1) {
+                    fields[field_count][field_pos++] = ' '; // Convert to space for display
+                }
+            }
         } else if (field_pos < MAX_FIELD_LEN - 1) {
             // Add character to current field
             fields[field_count][field_pos++] = c;
@@ -207,4 +235,14 @@ int parse_line(CSVViewer *viewer, size_t offset, char **fields, int max_fields) 
     }
     
     return field_count;
+}
+
+// Clean field for display - remove surrounding quotes but preserve content
+void clean_field_for_display(char *field) {
+    int len = strlen(field);
+    if (len >= 2 && field[0] == '"' && field[len-1] == '"') {
+        // Remove surrounding quotes
+        memmove(field, field + 1, len - 2);
+        field[len - 2] = '\0';
+    }
 } 
