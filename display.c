@@ -113,7 +113,7 @@ void display_data(CSVViewer *viewer, int start_row, int start_col) {
             mvaddstr(screen_row, x, truncated_field);
             
             x += col_width;
-            if (x < cols && col < num_fields - 1) {
+            if (col < num_fields - 1 && x + 3 <= cols) {
                 mvaddstr(screen_row, x, separator);
             }
             x += 3; // Use display width (3), not byte length
