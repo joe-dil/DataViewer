@@ -3,7 +3,7 @@
 #include <string.h>
 
 // Helper function to truncate a string to a specific display width
-void truncate_to_width(const char* src, char* dest, int width) {
+static void truncate_to_width(const char* src, char* dest, int width) {
     wchar_t wcs[MAX_FIELD_LEN];
     mbstowcs(wcs, src, MAX_FIELD_LEN);
     
@@ -126,19 +126,6 @@ void display_data(CSVViewer *viewer, int start_row, int start_col) {
              viewer->num_lines, start_row + 1, start_col + 1);
     
     refresh();
-}
-
-void sanitize_field(char *dest, const char *src, int max_len) {
-    int j = 0;
-    for (int i = 0; src[i] != '\0' && j < max_len; i++) {
-        unsigned char c = src[i];
-        if (c < 32 || c == 127) {
-            dest[j++] = ' ';
-        } else {
-            dest[j++] = c;
-        }
-    }
-    dest[j] = '\0';
 }
 
 void show_help(void) {

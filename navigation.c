@@ -1,31 +1,5 @@
 #include "viewer.h"
 
-// Simple, robust separator finding functions
-int find_next_separator(const char *line, int start_pos) {
-    int sep_len = strlen(separator);
-    int line_len = strlen(line);
-    
-    // Search for separator starting from start_pos
-    for (int i = start_pos; i <= line_len - sep_len; i++) {
-        if (strncmp(line + i, separator, sep_len) == 0) {
-            return i + sep_len; // Return position AFTER the separator
-        }
-    }
-    return line_len; // No separator found, return end of line
-}
-
-int find_prev_separator(const char *line, int start_pos) {
-    int sep_len = strlen(separator);
-    
-    // Search backwards for separator
-    for (int i = start_pos - sep_len; i >= 0; i--) {
-        if (strncmp(line + i, separator, sep_len) == 0) {
-            return i + sep_len; // Return position AFTER the separator
-        }
-    }
-    return 0; // No separator found, return beginning of line
-}
-
 void run_viewer(CSVViewer *viewer) {
     int start_row = 0, start_col = 0;
     int ch;
@@ -35,6 +9,7 @@ void run_viewer(CSVViewer *viewer) {
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
+    curs_set(0); // Hide cursor
     
     // Initialize colors
     if (has_colors()) {
@@ -106,5 +81,6 @@ void run_viewer(CSVViewer *viewer) {
     }
     
 cleanup:
+    curs_set(1); // Restore cursor
     endwin();
 } 
