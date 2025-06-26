@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include <wchar.h>
 
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
@@ -62,20 +63,27 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
             viewer->num_cols = num_fields;
         }
         
-        // Track column widths
+        // Track column widths using display width, not byte length
         for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
-            int field_len = strlen(viewer->fields[col]);
-            if (field_len > temp_widths[col]) {
-                temp_widths[col] = field_len;
+            wchar_t wcs[MAX_FIELD_LEN];
+            mbstowcs(wcs, viewer->fields[col], MAX_FIELD_LEN);
+            int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+            
+            if (display_width < 0) { // Fallback for invalid chars
+                display_width = strlen(viewer->fields[col]);
+            }
+
+            if (display_width > temp_widths[col]) {
+                temp_widths[col] = display_width;
             }
         }
     }
     
-    // Copy calculated widths (more aggressive width usage)
+    // Copy calculated widths with a cap of 16
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
     for (int i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = temp_widths[i] > 30 ? 30 :  // Increased max width 
-                               (temp_widths[i] < 6 ? 6 : temp_widths[i]);  // Reduced min width
+        viewer->col_widths[i] = temp_widths[i] > 16 ? 16 :  // Cap at 16 chars max
+                               (temp_widths[i] < 4 ? 4 : temp_widths[i]);  // Min 4 chars
     }
     
     return 0;

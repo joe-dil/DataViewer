@@ -21,6 +21,7 @@
 // Global variables
 extern int show_header;
 extern int supports_unicode;
+extern const char* separator;
 
 // Core data structure
 typedef struct {
@@ -48,13 +49,10 @@ char detect_delimiter(const char *data, size_t length);
 
 // Display functions (display.c)
 void display_data(CSVViewer *viewer, int start_row, int start_col);
-void format_line(CSVViewer *viewer, int line_index, char *output, int max_output_len);
 void show_help(void);
-void sanitize_field(char *dest, const char *src, int max_len);
 
 // Navigation functions (navigation.c)
 void run_viewer(CSVViewer *viewer);
-int find_next_separator(const char *line, int start_pos);
-int find_prev_separator(const char *line, int start_pos);
+void handle_input(CSVViewer *viewer, int *start_row, int *start_col);
 
 #endif // VIEWER_H 

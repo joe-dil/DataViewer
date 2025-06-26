@@ -3,6 +3,7 @@
 // Global variable definitions
 int show_header = 1; // Default to showing header
 int supports_unicode = 0;
+const char* separator = " | "; // Default to ASCII
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -35,12 +36,13 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    // Set UTF-8 locale for Unicode support
+    // Set UTF-8 locale and determine separator
     setlocale(LC_ALL, "");
     char *locale = setlocale(LC_CTYPE, NULL);
     if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
         supports_unicode = 1;
     }
+    separator = supports_unicode ? " │ " : " | ";
     
     CSVViewer viewer;
     if (init_viewer(&viewer, filename, delimiter) != 0) {
@@ -51,9 +53,9 @@ int main(int argc, char *argv[]) {
            viewer.num_lines, 
            viewer.delimiter == '\t' ? 'T' : viewer.delimiter);
     printf("Header mode: %s\n", show_header ? "Persistent header" : "Headerless");
-    printf("Unicode support: %s (using %s separators)\n", 
+    printf("Unicode support: %s (using '%s' separators)\n", 
            supports_unicode ? "YES" : "NO",
-           supports_unicode ? "│" : "|");
+           separator);
     printf("Detected %d columns with widths: ", viewer.num_cols);
     for (int i = 0; i < viewer.num_cols && i < 10; i++) {
         printf("%d ", viewer.col_widths[i]);
