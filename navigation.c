@@ -73,18 +73,23 @@ void run_viewer(CSVViewer *viewer) {
                 
             case KEY_LEFT:
             {
-                // Simple: move back by field width (16 + 3 = 19 chars)
-                if (start_col >= 19) {
-                    start_col -= 19;
+                // Find the previous field start (after previous separator)
+                char temp_line[BUFFER_SIZE * 2] = "";
+                format_line(viewer, start_row, temp_line, sizeof(temp_line));
+                
+                if (start_col > 0) {
+                    // Move back to find the previous separator
+                    int prev_sep = find_prev_separator(temp_line, start_col - 1);
+                    start_col = prev_sep; // Position after previous separator
                 } else {
-                    start_col = 0; // Beginning of line
+                    start_col = 0; // Already at beginning
                 }
                 break;
             }
                 
             case KEY_RIGHT:
             {
-                // Simple: move forward by field width (16 + 3 = 19 chars)
+                // Find the next field start (after next separator)
                 char temp_line[BUFFER_SIZE * 2] = "";
                 format_line(viewer, start_row, temp_line, sizeof(temp_line));
                 int line_length = strlen(temp_line);
@@ -92,8 +97,9 @@ void run_viewer(CSVViewer *viewer) {
                 getmaxyx(stdscr, rows, cols);
                 int max_scroll = line_length - cols + 5;
                 
-                int new_pos = start_col + 19;
-                start_col = new_pos > max_scroll ? max_scroll : new_pos;
+                // Find next separator from current position
+                int next_sep = find_next_separator(temp_line, start_col);
+                start_col = next_sep > max_scroll ? max_scroll : next_sep;
                 if (start_col < 0) start_col = 0;
                 break;
             }
