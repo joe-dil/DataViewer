@@ -37,10 +37,6 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         viewer->fields[i] = malloc(MAX_FIELD_LEN);
     }
     
-    viewer->capacity = 1000;
-    viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
-    viewer->num_lines = 0;
-    
     scan_file(viewer);
     
     // Single-pass column detection and width calculation (first 1000 lines)
@@ -135,22 +131,42 @@ char detect_delimiter(const char *data, size_t length) {
 }
 
 void scan_file(CSVViewer *viewer) {
+    viewer->capacity = 8192;
+    viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
     viewer->num_lines = 0;
-    
-    // Always include offset 0 (first line)
     viewer->line_offsets[viewer->num_lines++] = 0;
+
+    const size_t buffer_size = 4096;
+    size_t temp_offsets[buffer_size];
+    size_t temp_count = 0;
+
+    char *p = viewer->data;
+    char *end = viewer->data + viewer->length;
     
-    for (size_t i = 0; i < viewer->length; i++) {
-        if (viewer->data[i] == '\n') {
-            if (i + 1 < viewer->length) { // Don't add if it's the last character
-                if (viewer->num_lines >= viewer->capacity) {
-                    viewer->capacity *= 2;
-                    viewer->line_offsets = realloc(viewer->line_offsets, 
-                                                 viewer->capacity * sizeof(size_t));
-                }
-                viewer->line_offsets[viewer->num_lines++] = i + 1;
+    while ((p = memchr(p, '\n', end - p))) {
+        p++;
+        if (p >= end) break;
+
+        temp_offsets[temp_count++] = p - viewer->data;
+        
+        if (temp_count == buffer_size) {
+            if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
+                viewer->capacity = (viewer->num_lines + temp_count) * 1.5;
+                viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
             }
+            memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
+            viewer->num_lines += temp_count;
+            temp_count = 0;
         }
+    }
+
+    if (temp_count > 0) {
+        if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
+            viewer->capacity = viewer->num_lines + temp_count;
+            viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+        }
+        memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
+        viewer->num_lines += temp_count;
     }
 }
 
