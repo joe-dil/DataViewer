@@ -1,12 +1,10 @@
 #include "viewer.h"
 #include "string_intern.h"
 #include "memory_pool.h" // For pool_strdup
+#include "hash_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-// Forward declare the hash function used from cache.c
-uint32_t fnv1a_hash(const char *str);
 
 // Looks for a string in the intern table. If not found, it adds it.
 const char* intern_string(struct DSVViewer *viewer, const char* str) {

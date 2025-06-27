@@ -2,21 +2,12 @@
 #include "cache.h"
 #include "memory_pool.h"
 #include "string_intern.h"
+#include "hash_utils.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
-
-// FNV-1a hash function for cache lookups
-uint32_t fnv1a_hash(const char *str) {
-    uint32_t hash = 0x811c9dc5;
-    while (*str) {
-        hash ^= (uint8_t)*str++;
-        hash *= 0x01000193;
-    }
-    return hash;
-}
 
 // Helper to calculate display width, backing off to strlen for invalid multi-byte chars
 static int calculate_display_width(struct DSVViewer* viewer, const char* str) {

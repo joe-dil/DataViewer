@@ -38,6 +38,5 @@ typedef struct DisplayCache {
 void init_display_cache(struct DSVViewer *viewer);
 void cleanup_display_cache(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
-uint32_t fnv1a_hash(const char *str);
 
 #endif // CACHE_H 
