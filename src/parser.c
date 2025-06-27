@@ -20,7 +20,7 @@ static int load_file(struct DSVViewer *viewer, const char *filename);
 static void unload_file(struct DSVViewer *viewer);
 static void scan_file(DSVViewer *viewer);
 static void analyze_columns(struct DSVViewer *viewer);
-static void* analyze_columns_worker(void *arg);
+
 
 // --- Delimiter Detection ---
 static char detect_delimiter(const char *data, size_t length) {
@@ -111,78 +111,33 @@ static void scan_file(DSVViewer *viewer) {
 }
 
 // --- Column Analysis ---
-typedef struct {
-    DSVViewer *viewer;
-    size_t start_line, end_line;
-    int *thread_widths;
-    size_t thread_max_cols;
-} ThreadData;
-
-static void* analyze_columns_worker(void *arg) {
-    ThreadData *data = (ThreadData*)arg;
-    FieldDesc thread_fields[MAX_COLS];
-    for (size_t i = data->start_line; i < data->end_line; i++) {
-        size_t num_fields = parse_line(data->viewer, data->viewer->line_offsets[i], thread_fields, MAX_COLS);
-        if (num_fields > data->thread_max_cols) data->thread_max_cols = num_fields;
-        for (size_t col = 0; col < num_fields; col++) {
-            if (data->thread_widths[col] >= 16) continue;
-            int width = calculate_field_display_width(data->viewer, &thread_fields[col]);
-            if (width > data->thread_widths[col]) data->thread_widths[col] = width;
-        }
-    }
-    return NULL;
-}
-
 static void analyze_columns(struct DSVViewer *viewer) {
-    long num_cores = sysconf(_SC_NPROCESSORS_CONF); // Get physical cores
-    int max_threads = 4; // Sensible cap on threads
-    viewer->num_threads = (num_cores > 1) ? (int)num_cores : 1;
-    if (viewer->num_threads > max_threads) viewer->num_threads = max_threads;
+    // Simple and fast: analyze first 1000 lines max, single threaded
+    size_t sample_lines = viewer->num_lines > 1000 ? 1000 : viewer->num_lines;
     
-    if (viewer->num_lines < 2000) viewer->num_threads = 1; // No benefit for small files
-
-    pthread_t threads[viewer->num_threads];
-    ThreadData thread_data[viewer->num_threads];
-    size_t lines_per_thread = viewer->num_lines / viewer->num_threads;
-
-    for (int i = 0; i < viewer->num_threads; i++) {
-        thread_data[i] = (ThreadData){
-            .viewer = viewer, 
-            .start_line = i * lines_per_thread, 
-            .end_line = (i == viewer->num_threads - 1) ? viewer->num_lines : (i + 1) * lines_per_thread,
-            .thread_widths = calloc(MAX_COLS, sizeof(int)),
-            .thread_max_cols = 0
-        };
-
-        if (!thread_data[i].thread_widths) {
-            fprintf(stderr, "Failed to allocate memory for thread %d\n", i);
-            // In a real app, we'd handle this more gracefully (e.g., fallback to single-threaded)
-            // For now, we'll just exit to avoid a crash.
-            exit(1); 
-        }
-
-        if (pthread_create(&threads[i], NULL, analyze_columns_worker, &thread_data[i]) != 0) {
-            fprintf(stderr, "Failed to create thread %d\n", i);
-            exit(1); // Abort if a thread can't be created
-        }
-    }
-
+    int col_widths[MAX_COLS] = {0};
     size_t max_cols = 0;
-    int *final_widths = calloc(MAX_COLS, sizeof(int));
-    for (int i = 0; i < viewer->num_threads; i++) {
-        pthread_join(threads[i], NULL);
-        if (thread_data[i].thread_max_cols > max_cols) max_cols = thread_data[i].thread_max_cols;
-        for (size_t j = 0; j < thread_data[i].thread_max_cols; j++) {
-            if (thread_data[i].thread_widths[j] > final_widths[j]) final_widths[j] = thread_data[i].thread_widths[j];
+    FieldDesc fields[MAX_COLS];
+    
+    for (size_t i = 0; i < sample_lines; i++) {
+        size_t num_fields = parse_line(viewer, viewer->line_offsets[i], fields, MAX_COLS);
+        if (num_fields > max_cols) max_cols = num_fields;
+        
+        for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
+            if (col_widths[col] >= 16) continue; // Cap at 16 chars
+            int width = calculate_field_display_width(viewer, &fields[col]);
+            if (width > col_widths[col]) col_widths[col] = width;
         }
-        free(thread_data[i].thread_widths);
     }
+    
+    // Set final results
     viewer->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
     for (size_t i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = final_widths[i] > 16 ? 16 : (final_widths[i] < 4 ? 4 : final_widths[i]);
+        viewer->col_widths[i] = col_widths[i] > 16 ? 16 : (col_widths[i] < 4 ? 4 : col_widths[i]);
     }
-    free(final_widths);
+    
+
 }
 
 // --- Main Initialization Orchestrator ---
@@ -218,7 +173,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double analysis_start = get_time_ms();
     analyze_columns(viewer);
     phase_time = get_time_ms() - analysis_start;
-    printf("Column analysis: %.2f ms (using %d threads)\n", phase_time, viewer->num_threads);
+    printf("Column analysis: %.2f ms\n", phase_time);
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
