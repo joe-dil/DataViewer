@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "memory_pool.h"
 
 // Forward declare to avoid circular dependency
 struct DSVViewer;
@@ -10,10 +11,6 @@ struct DSVViewer;
 // Cache for display widths and truncated strings
 #define CACHE_SIZE 16384 // Power of 2 for efficient modulo
 #define MAX_TRUNCATED_VERSIONS 8
-
-// Memory Pool definitions for the display cache
-#define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
-#define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)   // Pool for cache entries
 
 #define INTERN_TABLE_SIZE 4096
 
@@ -49,17 +46,7 @@ typedef struct DisplayCache {
     DisplayCacheEntry *entries[CACHE_SIZE];
 } DisplayCache;
 
-// The memory pool for the cache system
-typedef struct CacheMemoryPool {
-    DisplayCacheEntry* entry_pool;
-    int entry_pool_used;
-    char* string_pool;
-    size_t string_pool_used;
-} CacheMemoryPool;
-
 // Function declarations for the cache subsystem
-void init_cache_memory_pool(struct DSVViewer *viewer);
-void cleanup_cache_memory_pool(struct DSVViewer *viewer);
 void init_string_intern_table(struct DSVViewer *viewer);
 void cleanup_string_intern_table(struct DSVViewer *viewer);
 void init_display_cache(struct DSVViewer *viewer);
