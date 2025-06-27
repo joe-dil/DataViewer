@@ -185,29 +185,50 @@ char detect_delimiter(const char *data, size_t length) {
 }
 
 void scan_file(CSVViewer *viewer) {
-    viewer->capacity = 8192;
+    // Estimate lines to pre-allocate a more appropriately sized buffer.
+    // This reduces the number of realloc() calls for large files.
+    // We assume an average line length of 80, with a minimum of 8192 lines.
+    size_t estimated_lines = (viewer->length / 80) + 1;
+    viewer->capacity = estimated_lines > 8192 ? estimated_lines : 8192;
     viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
+    if (!viewer->line_offsets) {
+        perror("Failed to allocate line_offsets");
+        exit(1);
+    }
+
     viewer->num_lines = 0;
     viewer->line_offsets[viewer->num_lines++] = 0;
 
-    // Fast line scanning using memchr - we'll handle multi-line records during parsing
+    // Fast line scanning using memchr, buffering results on the stack before
+    // copying to the heap-allocated array to improve performance.
     const size_t buffer_size = 4096;
     size_t temp_offsets[buffer_size];
     size_t temp_count = 0;
 
-    char *p = viewer->data;
-    char *end = viewer->data + viewer->length;
-    
+    char *p = (char*)viewer->data;
+    char *end = (char*)viewer->data + viewer->length;
+
     while ((p = memchr(p, '\n', end - p))) {
-        p++;
+        p++; // Move past the newline
         if (p >= end) break;
 
-        temp_offsets[temp_count++] = p - viewer->data;
-        
+        temp_offsets[temp_count++] = p - (char*)viewer->data;
+
         if (temp_count == buffer_size) {
+            // Bulk copy to the main array, reallocating if necessary.
             if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
-                viewer->capacity = (viewer->num_lines + temp_count) * 1.5;
+                // Grow capacity by 1.5x, which is a good balance.
+                size_t new_capacity = viewer->capacity * 1.5;
+                // Ensure capacity is at least what is needed now.
+                if (new_capacity < viewer->num_lines + temp_count) {
+                    new_capacity = viewer->num_lines + temp_count;
+                }
+                viewer->capacity = new_capacity;
                 viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+                if (!viewer->line_offsets) {
+                    perror("Failed to re-allocate line_offsets");
+                    exit(1);
+                }
             }
             memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
             viewer->num_lines += temp_count;
@@ -215,10 +236,15 @@ void scan_file(CSVViewer *viewer) {
         }
     }
 
+    // Copy any remaining offsets from the temp buffer.
     if (temp_count > 0) {
         if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
             viewer->capacity = viewer->num_lines + temp_count;
             viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+            if (!viewer->line_offsets) {
+                perror("Failed to re-allocate line_offsets");
+                exit(1);
+            }
         }
         memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
         viewer->num_lines += temp_count;
