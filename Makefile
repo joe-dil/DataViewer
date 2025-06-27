@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -O3 -march=native -flto -Iinclude
+CFLAGS = -Wall -Wextra -std=c99 -O3 -flto -Iinclude
 LIBS = -lncurses -lpthread
 SRCDIR = src
 OBJDIR = obj
