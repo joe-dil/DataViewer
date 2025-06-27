@@ -59,9 +59,8 @@ static int handle_input(int ch, DSVViewer *viewer, size_t *start_row, size_t *st
 void run_viewer(DSVViewer *viewer) {
     size_t start_row = 0, start_col = 0;
     int ch;
-    
-    // Initial display
     int rows, cols;
+    
     viewer->display_state->needs_redraw = 1; // Force initial draw
 
     while (1) {
@@ -74,7 +73,7 @@ void run_viewer(DSVViewer *viewer) {
         ch = getch();
         if (ch == 'q') break;
 
-        getmaxyx(stdscr, rows, cols); // Update dimensions on each loop
+        getmaxyx(stdscr, rows, cols); // Update dimensions after input
         int page_size = rows - 1;
         
         if (handle_input(ch, viewer, &start_row, &start_col, page_size)) {
