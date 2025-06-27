@@ -24,25 +24,10 @@
 #define MAX_COLS 256
 #define BUFFER_SIZE 8192
 
-// Zero-copy field descriptor
-typedef struct {
-    const char *start;
-    size_t length;
-    int needs_unescaping;
-} FieldDesc;
-
-// A component to hold file and parsing related data.
-typedef struct {
-    char *data;
-    size_t length;
-    int fd;
-    char delimiter;
-    FieldDesc *fields;
-    size_t num_fields;
-    size_t *line_offsets;
-    size_t num_lines;
-    size_t capacity;
-} FileAndParseData;
+// Include component headers that define data structures.
+// This ordering is important to resolve dependencies.
+#include "field_desc.h"
+#include "file_and_parse_data.h"
 
 // Core data structure
 typedef struct DSVViewer {
