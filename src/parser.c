@@ -26,7 +26,6 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     analyze_columns(viewer);
     
     // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
-    // For small files, this saves a significant amount of memory (~4MB).
     if (viewer->num_lines > 500 || viewer->num_cols > 20) {
         init_cache_memory_pool((struct DSVViewer*)viewer);
         init_display_cache((struct DSVViewer*)viewer);
@@ -70,13 +69,6 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     size_t i = offset;
     size_t field_start = offset;
     int has_escapes = 0;
-    
-    // Clear all field descriptors
-    for (int j = 0; j < max_fields; j++) {
-        fields[j].start = NULL;
-        fields[j].length = 0;
-        fields[j].needs_unescaping = 0;
-    }
     
     while (i < viewer->length && field_count < (size_t)max_fields) {
         char c = viewer->data[i];

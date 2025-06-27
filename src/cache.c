@@ -40,12 +40,18 @@ static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, 
 
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width) {
     if (!viewer->display_cache) return original;
+    
+    // Quick check for common case - if string is already short enough
+    size_t orig_len = strlen(original);
+    if (orig_len <= (size_t)width) return original;
+    
     static char static_buffer[UTILS_MAX_FIELD_LEN];
     uint32_t hash = fnv1a_hash(original);
     uint32_t index = hash % CACHE_SIZE;
 
     DisplayCacheEntry *entry = viewer->display_cache->entries[index];
     while (entry) {
+        // Compare hash first (faster than string comparison)
         if (entry->hash == hash && strcmp(entry->original_string, original) == 0) {
             for (int i = 0; i < entry->truncated_count; i++) {
                 if (entry->truncated[i].width == width) {

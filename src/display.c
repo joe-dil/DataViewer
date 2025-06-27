@@ -12,9 +12,10 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
     size_t num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
     
     if (is_header) {
-        // Fill the entire header row with spaces to create continuous underline
+        // More efficient header space filling - use a single call
+        move(y, 0);
         for (int i = 0; i < cols; i++) {
-            mvaddch(y, i, ' ');
+            addch(' ');
         }
     }
     
@@ -45,9 +46,8 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
             int text_len = strlen(display_string);
             char *padded_field = viewer->buffer_pool->buffer_two;
             strcpy(padded_field, display_string);
-            for (int i = text_len; i < col_width; i++) {
-                padded_field[i] = ' ';
-            }
+            // More efficient padding using memset
+            memset(padded_field + text_len, ' ', col_width - text_len);
             padded_field[col_width] = '\0';
             mvaddstr(y, x, padded_field);
         } else {
