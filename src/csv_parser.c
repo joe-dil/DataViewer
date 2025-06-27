@@ -46,6 +46,32 @@ void cleanup_buffer_pool(CSVViewer *viewer) {
     }
 }
 
+void init_string_intern_table(CSVViewer *viewer) {
+    viewer->intern_table = malloc(sizeof(StringInternTable));
+    if (!viewer->intern_table) {
+        perror("Failed to allocate string intern table");
+        exit(1);
+    }
+    viewer->intern_table->capacity = 1024; // Initial capacity
+    viewer->intern_table->used = 0;
+    viewer->intern_table->strings = malloc(sizeof(char*) * viewer->intern_table->capacity);
+    if (!viewer->intern_table->strings) {
+        perror("Failed to allocate strings for intern table");
+        exit(1);
+    }
+}
+
+void cleanup_string_intern_table(CSVViewer *viewer) {
+    if (!viewer->intern_table) return;
+
+    // Free all the interned strings
+    for (int i = 0; i < viewer->intern_table->used; i++) {
+        free(viewer->intern_table->strings[i]);
+    }
+    free(viewer->intern_table->strings);
+    free(viewer->intern_table);
+}
+
 void init_display_cache(CSVViewer *viewer) {
     viewer->display_cache = malloc(sizeof(DisplayCache));
     if (viewer->display_cache) {
@@ -132,9 +158,11 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     if (viewer->num_lines > 500 || viewer->num_cols > 20) {
         init_cache_memory_pool(viewer);
         init_display_cache(viewer);
+        init_string_intern_table(viewer);
     } else {
         viewer->mem_pool = NULL;
         viewer->display_cache = NULL;
+        viewer->intern_table = NULL;
     }
 
     // Copy calculated widths with a cap of 16
@@ -166,6 +194,7 @@ void cleanup_viewer(CSVViewer *viewer) {
     cleanup_display_cache(viewer);
     cleanup_cache_memory_pool(viewer);
     cleanup_buffer_pool(viewer);
+    cleanup_string_intern_table(viewer);
 }
 
 char detect_delimiter(const char *data, size_t length) {

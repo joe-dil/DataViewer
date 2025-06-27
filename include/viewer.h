@@ -35,6 +35,13 @@ typedef struct {
     wchar_t wide_buffer[MAX_FIELD_LEN];
 } BufferPool;
 
+// A simple string interning table to store each unique string only once.
+typedef struct {
+    char** strings;
+    int capacity;
+    int used;
+} StringInternTable;
+
 // Global variables
 extern int show_header;
 extern int supports_unicode;
@@ -92,15 +99,18 @@ typedef struct {
     DisplayCache *display_cache;
     CacheMemoryPool *mem_pool;
     BufferPool *buffer_pool;
+    StringInternTable *intern_table;
 } CSVViewer;
 
 // Function declarations
 
-// Cache and Memory Pool functions
+// Cache, Pool, and Interning functions
 void init_cache_memory_pool(CSVViewer *viewer);
 void cleanup_cache_memory_pool(CSVViewer *viewer);
 void init_buffer_pool(CSVViewer *viewer);
 void cleanup_buffer_pool(CSVViewer *viewer);
+void init_string_intern_table(CSVViewer *viewer);
+void cleanup_string_intern_table(CSVViewer *viewer);
 void init_display_cache(CSVViewer *viewer);
 void cleanup_display_cache(CSVViewer *viewer);
 const char* get_truncated_string(CSVViewer *viewer, const char* original, int width);

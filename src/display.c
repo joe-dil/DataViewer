@@ -46,6 +46,41 @@ static char* pool_strdup(CSVViewer *viewer, const char* str) {
     return dest;
 }
 
+// Looks for a string in the intern table. If not found, it adds it.
+// Returns a pointer to the unique string in the table.
+static const char* intern_string(CSVViewer *viewer, const char* str) {
+    StringInternTable *table = viewer->intern_table;
+    // Fallback to the memory pool's strdup if interning is disabled (e.g., for small files)
+    if (!table) return pool_strdup(viewer, str);
+
+    // Search for the string in the table. A simple linear scan is used here.
+    // For extreme cases with many unique strings, a hash table would be faster.
+    for (int i = 0; i < table->used; i++) {
+        if (strcmp(table->strings[i], str) == 0) {
+            return table->strings[i]; // Found it
+        }
+    }
+
+    // String not found, so add it. First, grow the table if it's full.
+    if (table->used >= table->capacity) {
+        table->capacity *= 2;
+        table->strings = realloc(table->strings, sizeof(char*) * table->capacity);
+        if (!table->strings) {
+            perror("Failed to reallocate intern table");
+            return NULL; // Failed to grow
+        }
+    }
+
+    // Duplicate the string and add it to the table.
+    char* new_str = strdup(str);
+    if (!new_str) {
+        perror("Failed to strdup for intern table");
+        return NULL;
+    }
+    table->strings[table->used] = new_str;
+    return table->strings[table->used++];
+}
+
 // Truncates a string using wide characters to respect display width
 static void truncate_str(CSVViewer* viewer, const char* src, char* dest, int width) {
     wchar_t* wcs = viewer->buffer_pool->wide_buffer;
@@ -123,14 +158,21 @@ const char* get_truncated_string(CSVViewer *viewer, const char* original, int wi
         }
 
         new_entry->hash = hash;
-        new_entry->original_string = pool_strdup(viewer, original);
+        new_entry->original_string = (char*)intern_string(viewer, original);
+        if (!new_entry->original_string) {
+            // Failed to intern, abort caching this entry
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
+            return static_buffer;
+        }
+        
         new_entry->display_width = calculate_display_width(viewer, original);
         new_entry->truncated_count = 1;
         new_entry->truncated[0].width = width;
         new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
         
         // If any string allocation failed, the entry is effectively invalid.
-        if (!new_entry->original_string || !new_entry->truncated[0].str) {
+        if (!new_entry->truncated[0].str) {
             // This is tricky because we can't easily "undo" the pool allocations.
             // For simplicity, we just won't add it to the cache.
             // The viewer will simply have a cache miss next time.
