@@ -19,6 +19,13 @@ int main(int argc, char *argv[]) {
 
     setlocale(LC_ALL, "");
 
+    // Check if the locale supports UTF-8 to enable unicode box characters
+    char *locale = setlocale(LC_CTYPE, NULL);
+    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
+        supports_unicode = 1;
+    }
+    separator = supports_unicode ? " │ " : " | ";
+
     DSVViewer viewer = {0};
     if (init_viewer(&viewer, argv[1], delimiter) != 0) {
         return 1;
