@@ -19,7 +19,7 @@ static void handle_input(int ch, DSVViewer *viewer, size_t *start_row, size_t *s
             if (*start_col > 0) (*start_col)--;
             break;
         case KEY_RIGHT:
-            if (*start_col < viewer->num_cols - 1) (*start_col)++;
+            if (*start_col < viewer->display_state->num_cols - 1) (*start_col)++;
             break;
         case KEY_PPAGE:
             if (*start_row > (size_t)page_size) {

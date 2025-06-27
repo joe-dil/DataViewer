@@ -159,15 +159,15 @@ static int analyze_columns(struct DSVViewer *viewer) {
     }
     
     // Set final results
-    viewer->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
-    viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
-    if (!viewer->col_widths) {
+    viewer->display_state->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
+    viewer->display_state->col_widths = malloc(viewer->display_state->num_cols * sizeof(int));
+    if (!viewer->display_state->col_widths) {
         fprintf(stderr, "Failed to allocate memory for column widths\n");
         return -1;
     }
     
-    for (size_t i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = col_widths[i] > MAX_COLUMN_WIDTH ? MAX_COLUMN_WIDTH : 
+    for (size_t i = 0; i < viewer->display_state->num_cols; i++) {
+        viewer->display_state->col_widths[i] = col_widths[i] > MAX_COLUMN_WIDTH ? MAX_COLUMN_WIDTH : 
                                (col_widths[i] < MIN_COLUMN_WIDTH ? MIN_COLUMN_WIDTH : col_widths[i]);
     }
     
@@ -178,6 +178,14 @@ static int analyze_columns(struct DSVViewer *viewer) {
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double start_time = get_time_ms();
     double phase_time;
+    
+    // -- Initialize new DisplayState component --
+    // Do this first, so it's available to other init functions.
+    viewer->display_state = malloc(sizeof(DisplayState));
+    if (!viewer->display_state) {
+        perror("Failed to allocate for DisplayState");
+        return -1;
+    }
     
     // Phase 1: File loading
     double load_start = get_time_ms();
@@ -213,13 +221,8 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
-    // -- Initialize new DisplayState component --
-    viewer->display_state = malloc(sizeof(DisplayState));
-    if (!viewer->display_state) {
-        perror("Failed to allocate for DisplayState");
-        return -1;
-    }
-    viewer->display_state->show_header = 1;
+    // Set the values in the new struct from the old ones
+    viewer->display_state->show_header = 1; // Default is 1 (true)
     
     char *locale = setlocale(LC_CTYPE, NULL);
     if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
@@ -232,7 +235,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
-    if (viewer->num_lines > CACHE_THRESHOLD_LINES || viewer->num_cols > CACHE_THRESHOLD_COLS) {
+    if (viewer->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
         init_cache_system((struct DSVViewer*)viewer);
     } else { 
         viewer->mem_pool = NULL; 
@@ -251,14 +254,22 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
 static void cleanup_parser_resources(DSVViewer *viewer) {
     if (viewer->fields) free(viewer->fields);
     if (viewer->line_offsets) free(viewer->line_offsets);
-    if (viewer->col_widths) free(viewer->col_widths);
+    // The col_widths pointer is now owned by DisplayState, so we no longer free it here.
+    // if (viewer->col_widths) free(viewer->col_widths);
 }
 
 void cleanup_viewer(DSVViewer *viewer) {
     unload_file(viewer);
     cleanup_parser_resources(viewer);
-    free(viewer->display_state);
     cleanup_cache_system((struct DSVViewer*)viewer);
+
+    // The DisplayState component should be freed last, after all other
+    // systems that might have used its data are cleaned up.
+    if (viewer->display_state) {
+        // This is the sole owner of the col_widths pointer.
+        free(viewer->display_state->col_widths);
+        free(viewer->display_state);
+    }
 }
 
 // --- Core Parsing Logic ---

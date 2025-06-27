@@ -20,7 +20,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
+        int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
         int original_col_width = col_width;
         
         // Header truncation logic
@@ -74,7 +74,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
+        int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
         
         char *rendered_field = viewer->buffer_pool.buffer_one;
         render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);

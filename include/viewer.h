@@ -25,6 +25,8 @@ typedef struct {
     int show_header;
     int supports_unicode;
     const char* separator;
+    int *col_widths;
+    size_t num_cols;
 } DisplayState;
 
 // General constants
@@ -63,8 +65,6 @@ typedef struct DSVViewer {
     size_t *line_offsets;
     size_t num_lines;
     size_t capacity;
-    int *col_widths;
-    size_t num_cols;
     
     // The buffer pool is now embedded, not a pointer.
     BufferPool buffer_pool;
