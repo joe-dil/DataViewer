@@ -1,21 +1,31 @@
 #include "viewer.h"
 #include "string_intern.h"
 #include "memory_pool.h" // For pool_strdup
-#include "hash_utils.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
+// Duplicated from cache.c to fix the build. This is terrible and will be
+// properly fixed in Phase 2.
+static uint32_t fnv1a_hash(const char *str) {
+    uint32_t hash = 0x811c9dc5;
+    for (const char *p = str; *p; p++) {
+        hash ^= (uint8_t)(*p);
+        hash *= 0x01000193;
+    }
+    return hash;
+}
+
 // Looks for a string in the intern table. If not found, it adds it.
 const char* intern_string(struct DSVViewer *viewer, const char* str) {
-    StringInternTable *table = viewer->intern_table;
-    if (!table) return pool_strdup(viewer, str); // Fallback if interning is off
+    if (!viewer->intern_table) return str;
 
     uint32_t hash = fnv1a_hash(str);
     uint32_t index = hash % INTERN_TABLE_SIZE;
 
     // Look for the string in the bucket's linked list
-    StringInternEntry *entry = table->buckets[index];
+    StringInternEntry *entry = viewer->intern_table->buckets[index];
     while (entry) {
         if (strcmp(entry->str, str) == 0) {
             return entry->str; // Found it
@@ -38,8 +48,8 @@ const char* intern_string(struct DSVViewer *viewer, const char* str) {
     }
 
     // Add the new entry to the front of the bucket's list
-    new_entry->next = table->buckets[index];
-    table->buckets[index] = new_entry;
+    new_entry->next = viewer->intern_table->buckets[index];
+    viewer->intern_table->buckets[index] = new_entry;
     
     return new_entry->str;
 }

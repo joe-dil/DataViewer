@@ -17,13 +17,21 @@
 
 // Include headers for modularized components
 // These headers contain the necessary struct definitions and function prototypes.
-#include "buffer_pool.h"
 #include "cache.h"
 
 // General constants
 #define MAX_COLS 256
 #define MAX_FIELD_LEN 1024 // Now used by non-module code, so stays here.
 #define BUFFER_SIZE 8192
+
+// Re-integrated from the now-deleted buffer_pool.h
+// This is now embedded directly in DSVViewer to avoid a separate allocation.
+typedef struct {
+    char buffer_one[MAX_FIELD_LEN];
+    char buffer_two[MAX_FIELD_LEN];
+    char buffer_three[MAX_FIELD_LEN];
+    wchar_t wide_buffer[MAX_FIELD_LEN];
+} BufferPool;
 
 // Global variables
 extern int show_header;
@@ -51,11 +59,13 @@ typedef struct DSVViewer {
     int *col_widths;
     size_t num_cols;
     
+    // The buffer pool is now embedded, not a pointer.
+    BufferPool buffer_pool;
+
     // Pointers to modularized components.
     // The struct definitions are in the included headers.
     struct DisplayCache *display_cache;
     struct CacheMemoryPool *mem_pool;
-    struct BufferPool *buffer_pool;
     struct StringInternTable *intern_table;
     
     // Threading

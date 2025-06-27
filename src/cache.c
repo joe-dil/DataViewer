@@ -2,25 +2,34 @@
 #include "cache.h"
 #include "memory_pool.h"
 #include "string_intern.h"
-#include "hash_utils.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
 
+// Re-integrated from the now-deleted hash_utils.c
+static uint32_t fnv1a_hash(const char *str) {
+    uint32_t hash = 0x811c9dc5;
+    for (const char *p = str; *p; p++) {
+        hash ^= (uint8_t)(*p);
+        hash *= 0x01000193;
+    }
+    return hash;
+}
+
 // Helper to calculate display width, backing off to strlen for invalid multi-byte chars
 static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
-    wchar_t* wcs = viewer->buffer_pool->wide_buffer;
-    mbstowcs(wcs, str, UTILS_MAX_FIELD_LEN);
-    int width = wcswidth(wcs, UTILS_MAX_FIELD_LEN);
+    wchar_t* wcs = viewer->buffer_pool.wide_buffer;
+    mbstowcs(wcs, str, MAX_FIELD_LEN);
+    int width = wcswidth(wcs, MAX_FIELD_LEN);
     return (width < 0) ? strlen(str) : width;
 }
 
 // Truncates a string using wide characters to respect display width
 static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, int width) {
-    wchar_t* wcs = viewer->buffer_pool->wide_buffer;
-    mbstowcs(wcs, src, UTILS_MAX_FIELD_LEN);
+    wchar_t* wcs = viewer->buffer_pool.wide_buffer;
+    mbstowcs(wcs, src, MAX_FIELD_LEN);
 
     int current_width = 0;
     int i = 0;
@@ -35,7 +44,7 @@ static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, 
     }
     wcs[i] = '\0';
 
-    wcstombs(dest, wcs, UTILS_MAX_FIELD_LEN);
+    wcstombs(dest, wcs, MAX_FIELD_LEN);
 }
 
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width) {
@@ -45,7 +54,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
     size_t orig_len = strlen(original);
     if (orig_len <= (size_t)width) return original;
     
-    static char static_buffer[UTILS_MAX_FIELD_LEN];
+    static char static_buffer[MAX_FIELD_LEN];
     uint32_t hash = fnv1a_hash(original);
     uint32_t index = hash % CACHE_SIZE;
 
@@ -63,7 +72,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
         entry = entry->next;
     }
 
-    char *truncated_buffer = viewer->buffer_pool->buffer_three;
+    char *truncated_buffer = viewer->buffer_pool.buffer_three;
     truncate_str(viewer, original, truncated_buffer, width);
 
     if (entry) {
@@ -73,29 +82,29 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
             char* pooled_str = pool_strdup(viewer, truncated_buffer);
             if (!pooled_str) {
                 entry->truncated_count--;
-                strncpy(static_buffer, truncated_buffer, UTILS_MAX_FIELD_LEN - 1);
-                static_buffer[UTILS_MAX_FIELD_LEN - 1] = '\0';
+                strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+                static_buffer[MAX_FIELD_LEN - 1] = '\0';
                 return static_buffer;
             }
             entry->truncated[i].str = pooled_str;
             return entry->truncated[i].str;
         }
-        strncpy(static_buffer, truncated_buffer, UTILS_MAX_FIELD_LEN - 1);
-        static_buffer[UTILS_MAX_FIELD_LEN - 1] = '\0';
+        strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+        static_buffer[MAX_FIELD_LEN - 1] = '\0';
         return static_buffer;
     } else {
         DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
         if (!new_entry) {
-            strncpy(static_buffer, truncated_buffer, UTILS_MAX_FIELD_LEN - 1);
-            static_buffer[UTILS_MAX_FIELD_LEN - 1] = '\0';
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
             return static_buffer;
         }
 
         new_entry->hash = hash;
         new_entry->original_string = (char*)intern_string(viewer, original);
         if (!new_entry->original_string) {
-            strncpy(static_buffer, truncated_buffer, UTILS_MAX_FIELD_LEN - 1);
-            static_buffer[UTILS_MAX_FIELD_LEN - 1] = '\0';
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
             return static_buffer;
         }
         
@@ -105,8 +114,8 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
         new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
         
         if (!new_entry->truncated[0].str) {
-            strncpy(static_buffer, truncated_buffer, UTILS_MAX_FIELD_LEN - 1);
-            static_buffer[UTILS_MAX_FIELD_LEN - 1] = '\0';
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
             return static_buffer;
         }
         

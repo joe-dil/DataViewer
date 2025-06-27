@@ -36,7 +36,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
             }
         }
         
-        char *rendered_field = viewer->buffer_pool->buffer_one;
+        char *rendered_field = viewer->buffer_pool.buffer_one;
         render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
@@ -44,7 +44,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         if (is_header && col_width < original_col_width) {
             // Pad truncated header fields with spaces
             int text_len = strlen(display_string);
-            char *padded_field = viewer->buffer_pool->buffer_two;
+            char *padded_field = viewer->buffer_pool.buffer_two;
             strcpy(padded_field, display_string);
             // More efficient padding using memset
             memset(padded_field + text_len, ' ', col_width - text_len);

@@ -1,5 +1,4 @@
 #include "viewer.h"
-#include "delimiter.h"
 #include "file_handler.h"
 #include "file_scanner.h"
 #include "column_analyzer.h"
@@ -17,6 +16,26 @@
 // Forward declaration for the SIMD helper function
 static size_t simd_find_delimiter(const char *data, size_t length, char delimiter);
 
+// Re-integrated from the now-deleted delimiter.c
+static char detect_delimiter(const char *data, size_t length) {
+    int comma_count = 0;
+    int tab_count = 0;
+    int pipe_count = 0;
+    size_t scan_len = (length < 1024) ? length : 1024;
+
+    for (size_t i = 0; i < scan_len; i++) {
+        switch (data[i]) {
+            case ',': comma_count++; break;
+            case '\t': tab_count++; break;
+            case '|': pipe_count++; break;
+        }
+    }
+
+    if (tab_count > comma_count && tab_count > pipe_count) return '\t';
+    if (pipe_count > comma_count && pipe_count > tab_count) return '|';
+    return ',';
+}
+
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     if (load_file(viewer, filename) != 0) {
         return -1;
@@ -33,7 +52,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     
     scan_file(viewer);
-    init_buffer_pool((struct DSVViewer*)viewer);
+    // Buffer pool is now embedded, no init needed.
     
     // Determine the number of threads to use
     long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
@@ -72,7 +91,7 @@ void cleanup_viewer(DSVViewer *viewer) {
     cleanup_parser_resources(viewer);
     cleanup_display_cache((struct DSVViewer*)viewer);
     cleanup_cache_memory_pool((struct DSVViewer*)viewer);
-    cleanup_buffer_pool((struct DSVViewer*)viewer);
+    // Buffer pool is now embedded, no cleanup needed.
     cleanup_string_intern_table((struct DSVViewer*)viewer);
 }
 
@@ -209,21 +228,21 @@ int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
     if (field->needs_unescaping) {
         // For fields with escapes, we need to render to get accurate width
         // This is the slow path, but only for fields with escaped quotes
-        char *temp_buffer = viewer->buffer_pool->buffer_one;
+        char *temp_buffer = viewer->buffer_pool.buffer_one;
         render_field(field, temp_buffer, MAX_FIELD_LEN);
         
-        wchar_t *wcs = viewer->buffer_pool->wide_buffer;
+        wchar_t *wcs = viewer->buffer_pool.wide_buffer;
         mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
         int display_width = wcswidth(wcs, MAX_FIELD_LEN);
         
         return display_width < 0 ? strlen(temp_buffer) : display_width;
     } else {
         // Fast path - no escaping needed, just measure raw content
-        wchar_t *wcs = viewer->buffer_pool->wide_buffer;
+        wchar_t *wcs = viewer->buffer_pool.wide_buffer;
         size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
         
         // Create temporary null-terminated string for mbstowcs
-        char *temp = viewer->buffer_pool->buffer_one;
+        char *temp = viewer->buffer_pool.buffer_one;
         memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
         temp[copy_len] = '\0';
         
