@@ -13,8 +13,8 @@ static uint32_t fnv1a_hash(const char *str) {
 }
 
 // Helper function to calculate display width, backing off to strlen for invalid multi-byte chars
-static int calculate_display_width(const char* str) {
-    wchar_t wcs[MAX_FIELD_LEN];
+static int calculate_display_width(CSVViewer* viewer, const char* str) {
+    wchar_t* wcs = viewer->buffer_pool->wide_buffer;
     mbstowcs(wcs, str, MAX_FIELD_LEN);
     int width = wcswidth(wcs, MAX_FIELD_LEN);
     return (width < 0) ? strlen(str) : width;
@@ -47,8 +47,8 @@ static char* pool_strdup(CSVViewer *viewer, const char* str) {
 }
 
 // Truncates a string using wide characters to respect display width
-static void truncate_str(const char* src, char* dest, int width) {
-    wchar_t wcs[MAX_FIELD_LEN];
+static void truncate_str(CSVViewer* viewer, const char* src, char* dest, int width) {
+    wchar_t* wcs = viewer->buffer_pool->wide_buffer;
     mbstowcs(wcs, src, MAX_FIELD_LEN);
 
     int current_width = 0;
@@ -93,8 +93,8 @@ const char* get_truncated_string(CSVViewer *viewer, const char* original, int wi
     }
 
     // --- Cache Miss ---
-    char truncated_buffer[MAX_FIELD_LEN];
-    truncate_str(original, truncated_buffer, width);
+    char *truncated_buffer = viewer->buffer_pool->buffer3;
+    truncate_str(viewer, original, truncated_buffer, width);
 
     if (entry) { // Entry exists, but not this truncated version
         if (entry->truncated_count < MAX_TRUNCATED_VERSIONS) {
@@ -124,7 +124,7 @@ const char* get_truncated_string(CSVViewer *viewer, const char* original, int wi
 
         new_entry->hash = hash;
         new_entry->original_string = pool_strdup(viewer, original);
-        new_entry->display_width = calculate_display_width(original);
+        new_entry->display_width = calculate_display_width(viewer, original);
         new_entry->truncated_count = 1;
         new_entry->truncated[0].width = width;
         new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
@@ -180,15 +180,15 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
             }
         }
         
-        char rendered_field[MAX_FIELD_LEN];
-        render_field(&viewer->fields[col], rendered_field, sizeof(rendered_field));
+        char *rendered_field = viewer->buffer_pool->buffer1;
+        render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         
         if (is_header && col_width < original_col_width) {
             // Pad truncated header fields with spaces
             int text_len = strlen(display_string);
-            char padded_field[MAX_FIELD_LEN];
+            char *padded_field = viewer->buffer_pool->buffer2;
             strcpy(padded_field, display_string);
             for (int i = text_len; i < col_width; i++) {
                 padded_field[i] = ' ';

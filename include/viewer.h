@@ -27,6 +27,14 @@
 #define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
 #define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)   // Pool for cache entries, allows for collisions
 
+// Reusable buffers to avoid repeated stack allocation in hot loops
+typedef struct {
+    char buffer1[MAX_FIELD_LEN];
+    char buffer2[MAX_FIELD_LEN];
+    char buffer3[MAX_FIELD_LEN];
+    wchar_t wide_buffer[MAX_FIELD_LEN];
+} BufferPool;
+
 // Global variables
 extern int show_header;
 extern int supports_unicode;
@@ -81,9 +89,9 @@ typedef struct {
     int capacity;
     int *col_widths;
     int num_cols;
-    char *render_buffer;  // Single buffer for rendering fields when needed
     DisplayCache *display_cache;
     CacheMemoryPool *mem_pool;
+    BufferPool *buffer_pool;
 } CSVViewer;
 
 // Function declarations
@@ -91,6 +99,8 @@ typedef struct {
 // Cache and Memory Pool functions
 void init_cache_memory_pool(CSVViewer *viewer);
 void cleanup_cache_memory_pool(CSVViewer *viewer);
+void init_buffer_pool(CSVViewer *viewer);
+void cleanup_buffer_pool(CSVViewer *viewer);
 void init_display_cache(CSVViewer *viewer);
 void cleanup_display_cache(CSVViewer *viewer);
 const char* get_truncated_string(CSVViewer *viewer, const char* original, int width);
@@ -102,7 +112,7 @@ void scan_file(CSVViewer *viewer);
 int parse_line(CSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
 char detect_delimiter(const char *data, size_t length);
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);
-int calculate_field_display_width(const FieldDesc *field);
+int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field);
 
 // Display functions (display.c)
 void display_data(CSVViewer *viewer, int start_row, int start_col);

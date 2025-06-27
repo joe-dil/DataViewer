@@ -31,6 +31,21 @@ void cleanup_cache_memory_pool(CSVViewer *viewer) {
     free(viewer->mem_pool);
 }
 
+void init_buffer_pool(CSVViewer *viewer) {
+    viewer->buffer_pool = malloc(sizeof(BufferPool));
+    if (!viewer->buffer_pool) {
+        // This is a critical failure, maybe exit or handle error appropriately
+        perror("Failed to allocate buffer pool");
+        exit(1);
+    }
+}
+
+void cleanup_buffer_pool(CSVViewer *viewer) {
+    if (viewer->buffer_pool) {
+        free(viewer->buffer_pool);
+    }
+}
+
 void init_display_cache(CSVViewer *viewer) {
     viewer->display_cache = malloc(sizeof(DisplayCache));
     if (viewer->display_cache) {
@@ -79,10 +94,8 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     // Allocate zero-copy field descriptors instead of field buffers
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     
-    // Single render buffer for on-demand field rendering
-    viewer->render_buffer = malloc(MAX_FIELD_LEN);
-    
     scan_file(viewer);
+    init_buffer_pool(viewer);
     init_cache_memory_pool(viewer);
     init_display_cache(viewer);
     
@@ -108,7 +121,7 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         
         // Track column widths using zero-copy field width calculation
         for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
-            int display_width = calculate_field_display_width(&viewer->fields[col]);
+            int display_width = calculate_field_display_width(viewer, &viewer->fields[col]);
             
             if (display_width > temp_widths[col]) {
                 temp_widths[col] = display_width;
@@ -136,9 +149,6 @@ void cleanup_viewer(CSVViewer *viewer) {
     if (viewer->fields) {
         free(viewer->fields);
     }
-    if (viewer->render_buffer) {
-        free(viewer->render_buffer);
-    }
     if (viewer->line_offsets) {
         free(viewer->line_offsets);
     }
@@ -147,6 +157,7 @@ void cleanup_viewer(CSVViewer *viewer) {
     }
     cleanup_display_cache(viewer);
     cleanup_cache_memory_pool(viewer);
+    cleanup_buffer_pool(viewer);
 }
 
 char detect_delimiter(const char *data, size_t length) {
@@ -318,7 +329,7 @@ char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
 }
 
 // Calculate display width of a field without fully rendering it
-int calculate_field_display_width(const FieldDesc *field) {
+int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field) {
     if (!field->start || field->length == 0) {
         return 0;
     }
@@ -334,21 +345,21 @@ int calculate_field_display_width(const FieldDesc *field) {
     if (field->needs_unescaping) {
         // For fields with escapes, we need to render to get accurate width
         // This is the slow path, but only for fields with escaped quotes
-        char temp_buffer[MAX_FIELD_LEN];
-        render_field(field, temp_buffer, sizeof(temp_buffer));
+        char *temp_buffer = viewer->buffer_pool->buffer1;
+        render_field(field, temp_buffer, MAX_FIELD_LEN);
         
-        wchar_t wcs[MAX_FIELD_LEN];
+        wchar_t *wcs = viewer->buffer_pool->wide_buffer;
         mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
         int display_width = wcswidth(wcs, MAX_FIELD_LEN);
         
         return display_width < 0 ? strlen(temp_buffer) : display_width;
     } else {
         // Fast path - no escaping needed, just measure raw content
-        wchar_t wcs[MAX_FIELD_LEN];
+        wchar_t *wcs = viewer->buffer_pool->wide_buffer;
         size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
         
         // Create temporary null-terminated string for mbstowcs
-        char temp[MAX_FIELD_LEN];
+        char *temp = viewer->buffer_pool->buffer1;
         memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
         temp[copy_len] = '\0';
         
