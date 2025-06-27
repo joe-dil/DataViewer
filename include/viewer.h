@@ -16,7 +16,7 @@
 
 // Include headers for modularized components
 // These headers contain the necessary struct definitions and function prototypes.
-#include "utils.h"
+#include "buffer_pool.h"
 #include "cache.h"
 
 // General constants
@@ -63,9 +63,7 @@ typedef struct DSVViewer {
 // Parser functions (parser.c)
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter);
 void cleanup_viewer(DSVViewer *viewer);
-void scan_file(DSVViewer *viewer);
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
-char detect_delimiter(const char *data, size_t length);
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);
 int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field);
 

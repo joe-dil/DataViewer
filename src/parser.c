@@ -1,60 +1,11 @@
 #include "viewer.h"
+#include "delimiter.h"
+#include "file_handler.h"
+#include "file_scanner.h"
 #include <wchar.h>
 
-// Estimate the number of lines in the file by sampling the first 100 lines or 64KB
-static size_t estimate_line_count(DSVViewer *viewer) {
-    const size_t sample_size = (viewer->length < 65536) ? viewer->length : 65536;
-    if (sample_size == 0) return 1;
-
-    int sample_lines = 0;
-    size_t bytes_in_sample = 0;
-    char *p = (char*)viewer->data;
-    char *end = p + sample_size;
-    int in_quotes = 0;
-
-    while (p < end && sample_lines < 100) {
-        if (*p == '"') {
-            in_quotes = !in_quotes;
-        } else if (*p == '\n' && !in_quotes) {
-            sample_lines++;
-            bytes_in_sample = (p - (char*)viewer->data);
-        }
-        p++;
-    }
-
-    if (sample_lines == 0) {
-        // If no newlines are found in the sample, fallback to a simple heuristic
-        return (viewer->length / 80) + 1;
-    }
-
-    double avg_line_len = (double)bytes_in_sample / sample_lines;
-    size_t estimated_total_lines = viewer->length / avg_line_len;
-    
-    // Return the estimate with a 20% safety margin
-    return (size_t)(estimated_total_lines * 1.2) + 1;
-}
-
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
-    struct stat st;
-    
-    viewer->fd = open(filename, O_RDONLY);
-    if (viewer->fd == -1) {
-        perror("Failed to open file");
-        return -1;
-    }
-    
-    if (fstat(viewer->fd, &st) == -1) {
-        perror("Failed to get file stats");
-        close(viewer->fd);
-        return -1;
-    }
-    
-    viewer->length = st.st_size;
-    
-    viewer->data = mmap(NULL, viewer->length, PROT_READ, MAP_PRIVATE, viewer->fd, 0);
-    if (viewer->data == MAP_FAILED) {
-        perror("Failed to map file");
-        close(viewer->fd);
+    if (load_file(viewer, filename) != 0) {
         return -1;
     }
     
@@ -123,13 +74,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     return 0;
 }
 
-void cleanup_viewer(DSVViewer *viewer) {
-    if (viewer->data != MAP_FAILED) {
-        munmap(viewer->data, viewer->length);
-    }
-    if (viewer->fd != -1) {
-        close(viewer->fd);
-    }
+static void cleanup_parser_resources(DSVViewer *viewer) {
     if (viewer->fields) {
         free(viewer->fields);
     }
@@ -139,86 +84,15 @@ void cleanup_viewer(DSVViewer *viewer) {
     if (viewer->col_widths) {
         free(viewer->col_widths);
     }
+}
+
+void cleanup_viewer(DSVViewer *viewer) {
+    unload_file(viewer);
+    cleanup_parser_resources(viewer);
     cleanup_display_cache((struct DSVViewer*)viewer);
     cleanup_cache_memory_pool((struct DSVViewer*)viewer);
     cleanup_buffer_pool((struct DSVViewer*)viewer);
     cleanup_string_intern_table((struct DSVViewer*)viewer);
-}
-
-char detect_delimiter(const char *data, size_t length) {
-    int comma_count = 0, pipe_count = 0, tab_count = 0, semicolon_count = 0;
-    size_t sample_size = length > 10000 ? 10000 : length;
-    
-    // Only scan the first line for delimiters
-    for (size_t i = 0; i < sample_size && data[i] != '\n'; i++) {
-        switch (data[i]) {
-            case ',': comma_count++; break;
-            case '|': pipe_count++; break;
-            case '\t': tab_count++; break;
-            case ';': semicolon_count++; break;
-        }
-    }
-    
-    if (pipe_count > comma_count && pipe_count > tab_count && pipe_count > semicolon_count) {
-        return '|';
-    } else if (tab_count > comma_count && tab_count > semicolon_count) {
-        return '\t';
-    } else if (semicolon_count > comma_count) {
-        return ';';
-    }
-    return ','; // Default to comma
-}
-
-void scan_file(DSVViewer *viewer) {
-    // Get an intelligent estimate of the line count to pre-allocate a buffer.
-    viewer->capacity = estimate_line_count(viewer);
-    viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
-    if (!viewer->line_offsets) {
-        perror("Failed to allocate initial line_offsets buffer");
-        exit(1);
-    }
-
-    viewer->num_lines = 0;
-    viewer->line_offsets[viewer->num_lines++] = 0;
-
-    char *p = (char*)viewer->data;
-    char *end = p + viewer->length;
-    int in_quotes = 0;
-
-    // This is a true single-pass scan. It inspects each character only once,
-    // which is the most performant and correct way to handle this task.
-    for (char *current = p; current < end; current++) {
-        if (*current == '"') {
-            in_quotes = !in_quotes;
-        } else if (*current == '\n' && !in_quotes) {
-            // This is a true row delimiter.
-            if (viewer->num_lines >= viewer->capacity) {
-                // Our estimate was too low. Fallback to doubling the capacity.
-                size_t new_capacity = viewer->capacity * 2;
-                if (new_capacity == 0) new_capacity = 8192;
-                size_t *new_offsets = realloc(viewer->line_offsets, new_capacity * sizeof(size_t));
-                if (!new_offsets) {
-                    perror("Failed to expand line buffer; file may be truncated");
-                    break;
-                }
-                viewer->line_offsets = new_offsets;
-                viewer->capacity = new_capacity;
-            }
-            // Store the offset of the character *after* the newline.
-            if (current + 1 < end) {
-                viewer->line_offsets[viewer->num_lines++] = (current - (char*)viewer->data) + 1;
-            }
-        }
-    }
-
-    // Trim the allocated memory to the exact size needed.
-    if (viewer->capacity > viewer->num_lines) {
-        size_t *trimmed_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
-        if (trimmed_offsets) {
-            viewer->line_offsets = trimmed_offsets;
-            viewer->capacity = viewer->num_lines;
-        }
-    }
 }
 
 // Zero-copy parser - returns field descriptors pointing into original data

@@ -1,5 +1,5 @@
-#ifndef UTILS_H
-#define UTILS_H
+#ifndef BUFFER_POOL_H
+#define BUFFER_POOL_H
 
 #include <wchar.h>
 
@@ -20,4 +20,4 @@ struct DSVViewer;
 void init_buffer_pool(struct DSVViewer *viewer);
 void cleanup_buffer_pool(struct DSVViewer *viewer);
 
-#endif // UTILS_H 
+#endif // BUFFER_POOL_H 

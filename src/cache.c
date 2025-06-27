@@ -1,6 +1,5 @@
 #include "viewer.h"
 #include "cache.h"
-#include "utils.h"
 
 #include <stdlib.h>
 #include <stdio.h>
