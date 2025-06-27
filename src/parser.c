@@ -249,8 +249,10 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
     if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
-        // Note: init_cache_system does not have robust error handling yet.
-        init_cache_system((struct DSVViewer*)viewer);
+        if (init_cache_system((struct DSVViewer*)viewer) != 0) {
+            fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
+            // The cleanup function will safely handle the partially initialized cache components.
+        }
     }
     phase_time = get_time_ms() - cache_start;
     printf("Cache initialization: %.2f ms\n", phase_time);

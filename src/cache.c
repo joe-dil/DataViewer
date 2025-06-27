@@ -7,11 +7,11 @@
 
 // --- Static Helper Declarations ---
 static uint32_t fnv1a_hash(const char *str);
-static void init_display_cache(struct DSVViewer *viewer);
+static int init_display_cache(struct DSVViewer *viewer);
 static void cleanup_display_cache(struct DSVViewer *viewer);
-static void init_cache_memory_pool(struct DSVViewer *viewer);
+static int init_cache_memory_pool(struct DSVViewer *viewer);
 static void cleanup_cache_memory_pool(struct DSVViewer *viewer);
-static void init_string_intern_table(struct DSVViewer *viewer);
+static int init_string_intern_table(struct DSVViewer *viewer);
 static void cleanup_string_intern_table(struct DSVViewer *viewer);
 static const char* intern_string(struct DSVViewer *viewer, const char* str);
 static char* pool_strdup(struct DSVViewer *viewer, const char* str);
@@ -43,10 +43,17 @@ static char* pool_strdup(struct DSVViewer *viewer, const char* str) {
     return dest;
 }
 
-static void init_cache_memory_pool(struct DSVViewer *viewer) {
+static int init_cache_memory_pool(struct DSVViewer *viewer) {
     viewer->mem_pool = calloc(1, sizeof(CacheMemoryPool));
+    if (!viewer->mem_pool) return -1;
+
     viewer->mem_pool->entry_pool = calloc(CACHE_ENTRY_POOL_SIZE, sizeof(DisplayCacheEntry));
+    if (!viewer->mem_pool->entry_pool) return -1;
+
     viewer->mem_pool->string_pool = malloc(CACHE_STRING_POOL_SIZE);
+    if (!viewer->mem_pool->string_pool) return -1;
+
+    return 0;
 }
 
 static void cleanup_cache_memory_pool(struct DSVViewer *viewer) {
@@ -67,14 +74,23 @@ static const char* intern_string(struct DSVViewer *viewer, const char* str) {
         entry = entry->next;
     }
     StringInternEntry *new_entry = malloc(sizeof(StringInternEntry));
+    if (!new_entry) return str; // On failure, just return original string
+
     new_entry->str = pool_strdup(viewer, str);
+    if (!new_entry->str) {
+        free(new_entry);
+        return str; // On failure, just return original string
+    }
+
     new_entry->next = viewer->intern_table->buckets[index];
     viewer->intern_table->buckets[index] = new_entry;
     return new_entry->str;
 }
 
-static void init_string_intern_table(struct DSVViewer *viewer) {
+static int init_string_intern_table(struct DSVViewer *viewer) {
     viewer->intern_table = calloc(1, sizeof(StringInternTable));
+    if (!viewer->intern_table) return -1;
+    return 0;
 }
 
 static void cleanup_string_intern_table(struct DSVViewer *viewer) {
@@ -156,8 +172,10 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
     return new_entry->truncated[0].str;
 }
 
-static void init_display_cache(struct DSVViewer *viewer) {
+static int init_display_cache(struct DSVViewer *viewer) {
     viewer->display_cache = calloc(1, sizeof(DisplayCache));
+    if (!viewer->display_cache) return -1;
+    return 0;
 }
 
 static void cleanup_display_cache(struct DSVViewer *viewer) {
@@ -166,10 +184,11 @@ static void cleanup_display_cache(struct DSVViewer *viewer) {
 }
 
 // --- Public-Facing System Functions ---
-void init_cache_system(struct DSVViewer *viewer) {
-    init_cache_memory_pool(viewer);
-    init_string_intern_table(viewer);
-    init_display_cache(viewer);
+int init_cache_system(struct DSVViewer *viewer) {
+    if (init_cache_memory_pool(viewer) != 0) return -1;
+    if (init_string_intern_table(viewer) != 0) return -1;
+    if (init_display_cache(viewer) != 0) return -1;
+    return 0;
 }
 
 void cleanup_cache_system(struct DSVViewer *viewer) {

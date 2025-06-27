@@ -58,7 +58,7 @@ typedef struct CacheMemoryPool {
 
 
 // --- Public Function Declarations for the Cache Subsystem ---
-void init_cache_system(struct DSVViewer *viewer);
+int init_cache_system(struct DSVViewer *viewer);
 void cleanup_cache_system(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 
