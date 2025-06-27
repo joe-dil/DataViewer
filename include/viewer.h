@@ -18,37 +18,11 @@
 // Include headers for modularized components
 // These headers contain the necessary struct definitions and function prototypes.
 #include "cache.h"
-
-// General constants needed by structs defined below
-#define MAX_FIELD_LEN 1024 // Now used by non-module code, so stays here.
-
-// Re-integrated from the now-deleted buffer_pool.h
-// This is now embedded directly in DSVViewer to avoid a separate allocation.
-typedef struct {
-    char buffer_one[MAX_FIELD_LEN];
-    char buffer_two[MAX_FIELD_LEN];
-    char buffer_three[MAX_FIELD_LEN];
-    wchar_t wide_buffer[MAX_FIELD_LEN];
-} BufferPool;
-
-// NEW: A component to hold state related to the display and UI.
-// Defined here temporarily to avoid include issues during surgical refactor.
-typedef struct {
-    int show_header;
-    int supports_unicode;
-    const char* separator;
-    int *col_widths;
-    size_t num_cols;
-    BufferPool buffers;
-} DisplayState;
+#include "display_state.h"
 
 // General constants
 #define MAX_COLS 256
 #define BUFFER_SIZE 8192
-
-// Constants for default separator strings
-#define ASCII_SEPARATOR " | "
-#define UNICODE_SEPARATOR " │ "
 
 // Zero-copy field descriptor
 typedef struct {

@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include "display_state.h"
 #include <wchar.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -6,7 +7,6 @@
 #include <sys/mman.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <locale.h>
 
 // Constants to replace magic numbers
 #define DELIMITER_DETECTION_SAMPLE_SIZE 1024
@@ -221,9 +221,10 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
-    // Set the values in the new struct from the old ones
+    // Set the values directly.
     viewer->display_state->show_header = 1; // Default is 1 (true)
     
+    // The locale logic is now coupled with the DisplayState.
     char *locale = setlocale(LC_CTYPE, NULL);
     if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
         viewer->display_state->supports_unicode = 1;
