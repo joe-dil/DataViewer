@@ -338,18 +338,18 @@ int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
     size_t raw_len = field->length;
     if (raw_len >= 2 && field->start[0] == '"' && field->start[raw_len-1] == '"') raw_len -= 2;
     if (field->needs_unescaping) {
-        char *temp_buffer = viewer->buffer_pool.buffer_one;
+        char *temp_buffer = viewer->display_state->buffers.buffer_one;
         render_field(field, temp_buffer, MAX_FIELD_LEN);
-        wchar_t *wcs = viewer->buffer_pool.wide_buffer;
+        wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
         mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
         int display_width = wcswidth(wcs, MAX_FIELD_LEN);
         return display_width < 0 ? strlen(temp_buffer) : display_width;
     } else {
-        char *temp = viewer->buffer_pool.buffer_one;
+        char *temp = viewer->display_state->buffers.buffer_one;
         size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
         memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
         temp[copy_len] = '\0';
-        wchar_t *wcs = viewer->buffer_pool.wide_buffer;
+        wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
         mbstowcs(wcs, temp, MAX_FIELD_LEN);
         int display_width = wcswidth(wcs, MAX_FIELD_LEN);
         return display_width < 0 ? copy_len : display_width;

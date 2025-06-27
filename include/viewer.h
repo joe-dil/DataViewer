@@ -19,20 +19,8 @@
 // These headers contain the necessary struct definitions and function prototypes.
 #include "cache.h"
 
-// NEW: A component to hold state related to the display and UI.
-// Defined here temporarily to avoid include issues during surgical refactor.
-typedef struct {
-    int show_header;
-    int supports_unicode;
-    const char* separator;
-    int *col_widths;
-    size_t num_cols;
-} DisplayState;
-
-// General constants
-#define MAX_COLS 256
+// General constants needed by structs defined below
 #define MAX_FIELD_LEN 1024 // Now used by non-module code, so stays here.
-#define BUFFER_SIZE 8192
 
 // Re-integrated from the now-deleted buffer_pool.h
 // This is now embedded directly in DSVViewer to avoid a separate allocation.
@@ -42,6 +30,21 @@ typedef struct {
     char buffer_three[MAX_FIELD_LEN];
     wchar_t wide_buffer[MAX_FIELD_LEN];
 } BufferPool;
+
+// NEW: A component to hold state related to the display and UI.
+// Defined here temporarily to avoid include issues during surgical refactor.
+typedef struct {
+    int show_header;
+    int supports_unicode;
+    const char* separator;
+    int *col_widths;
+    size_t num_cols;
+    BufferPool buffers;
+} DisplayState;
+
+// General constants
+#define MAX_COLS 256
+#define BUFFER_SIZE 8192
 
 // Constants for default separator strings
 #define ASCII_SEPARATOR " | "
@@ -66,9 +69,6 @@ typedef struct DSVViewer {
     size_t num_lines;
     size_t capacity;
     
-    // The buffer pool is now embedded, not a pointer.
-    BufferPool buffer_pool;
-
     // Pointers to modularized components.
     struct DisplayCache *display_cache;
     struct CacheMemoryPool *mem_pool;

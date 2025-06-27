@@ -92,14 +92,14 @@ static void cleanup_string_intern_table(struct DSVViewer *viewer) {
 
 // --- Display Cache ---
 static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
-    wchar_t* wcs = viewer->buffer_pool.wide_buffer;
+    wchar_t* wcs = viewer->display_state->buffers.wide_buffer;
     mbstowcs(wcs, str, MAX_FIELD_LEN);
     int width = wcswidth(wcs, MAX_FIELD_LEN);
     return (width < 0) ? strlen(str) : width;
 }
 
 static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, int width) {
-    wchar_t* wcs = viewer->buffer_pool.wide_buffer;
+    wchar_t* wcs = viewer->display_state->buffers.wide_buffer;
     mbstowcs(wcs, src, MAX_FIELD_LEN);
     int current_width = 0, i = 0;
     for (i = 0; wcs[i] != '\0'; ++i) {
@@ -125,7 +125,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
             for (int i = 0; i < entry->truncated_count; i++) {
                 if (entry->truncated[i].width == width) return entry->truncated[i].str;
             }
-            char *truncated_buffer = viewer->buffer_pool.buffer_three;
+            char *truncated_buffer = viewer->display_state->buffers.buffer_three;
             truncate_str(viewer, original, truncated_buffer, width);
             if (entry->truncated_count < MAX_TRUNCATED_VERSIONS) {
                 int i = entry->truncated_count++;
@@ -141,7 +141,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
     DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
     if (!new_entry) return original; // Pool full
         
-    char *truncated_buffer = viewer->buffer_pool.buffer_three;
+    char *truncated_buffer = viewer->display_state->buffers.buffer_three;
     truncate_str(viewer, original, truncated_buffer, width);
 
     new_entry->hash = hash;
