@@ -1,6 +1,39 @@
 #include "viewer.h"
 #include <wchar.h>
 
+// Estimate the number of lines in the file by sampling the first 100 lines or 64KB
+static size_t estimate_line_count(DSVViewer *viewer) {
+    const size_t sample_size = (viewer->length < 65536) ? viewer->length : 65536;
+    if (sample_size == 0) return 1;
+
+    int sample_lines = 0;
+    size_t bytes_in_sample = 0;
+    char *p = (char*)viewer->data;
+    char *end = p + sample_size;
+    int in_quotes = 0;
+
+    while (p < end && sample_lines < 100) {
+        if (*p == '"') {
+            in_quotes = !in_quotes;
+        } else if (*p == '\n' && !in_quotes) {
+            sample_lines++;
+            bytes_in_sample = (p - (char*)viewer->data);
+        }
+        p++;
+    }
+
+    if (sample_lines == 0) {
+        // If no newlines are found in the sample, fallback to a simple heuristic
+        return (viewer->length / 80) + 1;
+    }
+
+    double avg_line_len = (double)bytes_in_sample / sample_lines;
+    size_t estimated_total_lines = viewer->length / avg_line_len;
+    
+    // Return the estimate with a 20% safety margin
+    return (size_t)(estimated_total_lines * 1.2) + 1;
+}
+
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
     
@@ -40,7 +73,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     
     // Single-pass column detection and width calculation (first 1000 lines)
     viewer->num_cols = 0;
-    int sample_size = viewer->num_lines < 1000 ? viewer->num_lines : 1000;
+    size_t sample_size = (viewer->num_lines < 1000) ? viewer->num_lines : 1000;
     
     // Temporary width tracking
     int temp_widths[MAX_COLS];
@@ -49,8 +82,8 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     }
     
     // Single pass through sample lines
-    for (int i = 0; i < sample_size; i++) {
-        int num_fields = parse_line(viewer, viewer->line_offsets[i], 
+    for (size_t i = 0; i < sample_size; i++) {
+        size_t num_fields = parse_line(viewer, viewer->line_offsets[i], 
                                   viewer->fields, MAX_COLS);
         
         // Track max columns
@@ -59,7 +92,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
         }
         
         // Track column widths using zero-copy field width calculation
-        for (int col = 0; col < num_fields && col < MAX_COLS; col++) {
+        for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
             int display_width = calculate_field_display_width(viewer, &viewer->fields[col]);
             
             if (display_width > temp_widths[col]) {
@@ -82,7 +115,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
 
     // Copy calculated widths with a cap of 16
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
-    for (int i = 0; i < viewer->num_cols; i++) {
+    for (size_t i = 0; i < viewer->num_cols; i++) {
         viewer->col_widths[i] = temp_widths[i] > 16 ? 16 :  // Cap at 16 chars max
                                (temp_widths[i] < 4 ? 4 : temp_widths[i]);  // Min 4 chars
     }
@@ -137,77 +170,62 @@ char detect_delimiter(const char *data, size_t length) {
 }
 
 void scan_file(DSVViewer *viewer) {
-    // Estimate lines to pre-allocate a more appropriately sized buffer.
-    // This reduces the number of realloc() calls for large files.
-    // We assume an average line length of 80, with a minimum of 8192 lines.
-    size_t estimated_lines = (viewer->length / 80) + 1;
-    viewer->capacity = estimated_lines > 8192 ? estimated_lines : 8192;
+    // Get an intelligent estimate of the line count to pre-allocate a buffer.
+    viewer->capacity = estimate_line_count(viewer);
     viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
     if (!viewer->line_offsets) {
-        perror("Failed to allocate line_offsets");
+        perror("Failed to allocate initial line_offsets buffer");
         exit(1);
     }
 
     viewer->num_lines = 0;
     viewer->line_offsets[viewer->num_lines++] = 0;
 
-    // Fast line scanning using memchr, buffering results on the stack before
-    // copying to the heap-allocated array to improve performance.
-    const size_t buffer_size = 4096;
-    size_t temp_offsets[buffer_size];
-    size_t temp_count = 0;
-
     char *p = (char*)viewer->data;
-    char *end = (char*)viewer->data + viewer->length;
+    char *end = p + viewer->length;
+    int in_quotes = 0;
 
-    while ((p = memchr(p, '\n', end - p))) {
-        p++; // Move past the newline
-        if (p >= end) break;
-
-        temp_offsets[temp_count++] = p - (char*)viewer->data;
-
-        if (temp_count == buffer_size) {
-            // Bulk copy to the main array, reallocating if necessary.
-            if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
-                // Grow capacity by 1.5x, which is a good balance.
-                size_t new_capacity = viewer->capacity * 1.5;
-                // Ensure capacity is at least what is needed now.
-                if (new_capacity < viewer->num_lines + temp_count) {
-                    new_capacity = viewer->num_lines + temp_count;
-                }
-                viewer->capacity = new_capacity;
-                viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+    // This is a true single-pass scan. It inspects each character only once,
+    // which is the most performant and correct way to handle this task.
+    for (char *current = p; current < end; current++) {
+        if (*current == '"') {
+            in_quotes = !in_quotes;
+        } else if (*current == '\n' && !in_quotes) {
+            // This is a true row delimiter.
+            if (viewer->num_lines >= viewer->capacity) {
+                // Our estimate was too low. Fallback to doubling the capacity.
+                size_t new_capacity = viewer->capacity * 2;
+                if (new_capacity == 0) new_capacity = 8192;
+                viewer->line_offsets = realloc(viewer->line_offsets, new_capacity * sizeof(size_t));
                 if (!viewer->line_offsets) {
-                    perror("Failed to re-allocate line_offsets");
+                    perror("Failed to re-allocate line_offsets during scan");
                     exit(1);
                 }
+                viewer->capacity = new_capacity;
             }
-            memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
-            viewer->num_lines += temp_count;
-            temp_count = 0;
+            // Store the offset of the character *after* the newline.
+            if (current + 1 < end) {
+                viewer->line_offsets[viewer->num_lines++] = (current - (char*)viewer->data) + 1;
+            }
         }
     }
 
-    // Copy any remaining offsets from the temp buffer.
-    if (temp_count > 0) {
-        if (viewer->num_lines + temp_count > (size_t)viewer->capacity) {
-            viewer->capacity = viewer->num_lines + temp_count;
-            viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
-            if (!viewer->line_offsets) {
-                perror("Failed to re-allocate line_offsets");
-                exit(1);
-            }
+    // Trim the allocated memory to the exact size needed.
+    if (viewer->capacity > viewer->num_lines) {
+        size_t *trimmed_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
+        if (trimmed_offsets) {
+            viewer->line_offsets = trimmed_offsets;
+            viewer->capacity = viewer->num_lines;
         }
-        memcpy(viewer->line_offsets + viewer->num_lines, temp_offsets, temp_count * sizeof(size_t));
-        viewer->num_lines += temp_count;
+        // If realloc fails, we just keep the slightly larger buffer, which is fine.
     }
 }
 
 // Zero-copy parser - returns field descriptors pointing into original data
-int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
+size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
     if (offset >= viewer->length) return 0;
     
-    int field_count = 0;
+    size_t field_count = 0;
     int in_quotes = 0;
     size_t i = offset;
     size_t field_start = offset;
@@ -220,7 +238,7 @@ int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fiel
         fields[j].needs_unescaping = 0;
     }
     
-    while (i < viewer->length && field_count < max_fields) {
+    while (i < viewer->length && field_count < (size_t)max_fields) {
         char c = viewer->data[i];
         
         if (c == '"') {
@@ -254,7 +272,7 @@ int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fiel
     }
     
     // Finalize last field
-    if (field_count < max_fields) {
+    if (field_count < (size_t)max_fields) {
         fields[field_count].start = viewer->data + field_start;
         fields[field_count].length = i - field_start;
         fields[field_count].needs_unescaping = has_escapes;

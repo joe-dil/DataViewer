@@ -3,13 +3,13 @@
 #include <string.h>
 
 // Unified function to draw any data row (header or data)
-static void draw_data_row(int y, DSVViewer *viewer, int file_line, int start_col, int is_header) {
+static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, int is_header) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
     
     int x = 0;
-    int num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
+    size_t num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
     
     if (is_header) {
         // Fill the entire header row with spaces to create continuous underline
@@ -19,7 +19,7 @@ static void draw_data_row(int y, DSVViewer *viewer, int file_line, int start_col
     }
     
     // Use the unified logic for both header and data
-    for (int col = start_col; col < num_fields; col++) {
+    for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
         int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
@@ -70,7 +70,7 @@ static void draw_data_row(int y, DSVViewer *viewer, int file_line, int start_col
     }
 }
 
-void display_data(DSVViewer *viewer, int start_row, int start_col) {
+void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     
@@ -87,15 +87,16 @@ void display_data(DSVViewer *viewer, int start_row, int start_col) {
     }
     
     for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
-        int file_line = start_row + screen_row - (show_header ? 0 : screen_start_row);
+        size_t file_line = start_row + screen_row - (show_header ? 0 : screen_start_row);
         if (file_line >= viewer->num_lines) break;
 
         draw_data_row(screen_row, viewer, file_line, start_col, 0); // 0 = not header
     }
     
-    mvprintw(rows - 1, 0, "Lines %d-%d of %d | Row: %d | Col: %d | q: quit | h: help",
+    // Use %zu for size_t types
+    mvprintw(rows - 1, 0, "Lines %zu-%zu of %zu | Row: %zu | Col: %zu | q: quit | h: help",
              start_row + 1,
-             start_row + display_rows > viewer->num_lines ? viewer->num_lines : start_row + display_rows,
+             (start_row + display_rows > viewer->num_lines) ? viewer->num_lines : start_row + display_rows,
              viewer->num_lines, start_row + 1, start_col + 1);
     
     refresh();

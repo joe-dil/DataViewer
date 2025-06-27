@@ -43,12 +43,12 @@ typedef struct DSVViewer {
     int fd;
     char delimiter;
     FieldDesc *fields;
-    int num_fields;
+    size_t num_fields;
     size_t *line_offsets;
-    int num_lines;
-    int capacity;
+    size_t num_lines;
+    size_t capacity;
     int *col_widths;
-    int num_cols;
+    size_t num_cols;
     
     // Pointers to modularized components.
     // The struct definitions are in the included headers.
@@ -64,13 +64,13 @@ typedef struct DSVViewer {
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter);
 void cleanup_viewer(DSVViewer *viewer);
 void scan_file(DSVViewer *viewer);
-int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
+size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
 char detect_delimiter(const char *data, size_t length);
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);
 int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field);
 
 // Display functions (display.c)
-void display_data(DSVViewer *viewer, int start_row, int start_col);
+void display_data(DSVViewer *viewer, size_t start_row, size_t start_col);
 void show_help(void);
 
 // Navigation functions (navigation.c)
