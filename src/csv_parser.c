@@ -96,8 +96,6 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     
     scan_file(viewer);
     init_buffer_pool(viewer);
-    init_cache_memory_pool(viewer);
-    init_display_cache(viewer);
     
     // Single-pass column detection and width calculation (first 1000 lines)
     viewer->num_cols = 0;
@@ -129,6 +127,16 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
         }
     }
     
+    // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
+    // For small files, this saves a significant amount of memory (~4MB).
+    if (viewer->num_lines > 500 || viewer->num_cols > 20) {
+        init_cache_memory_pool(viewer);
+        init_display_cache(viewer);
+    } else {
+        viewer->mem_pool = NULL;
+        viewer->display_cache = NULL;
+    }
+
     // Copy calculated widths with a cap of 16
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
     for (int i = 0; i < viewer->num_cols; i++) {
