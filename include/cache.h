@@ -15,11 +15,17 @@ struct DSVViewer;
 #define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
 #define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)   // Pool for cache entries
 
-// A simple string interning table
+#define INTERN_TABLE_SIZE 4096
+
+// A single entry in the string intern table's hash map
+typedef struct StringInternEntry {
+    char *str;
+    struct StringInternEntry *next;
+} StringInternEntry;
+
+// A hash-table-based string interning table to store each unique string only once.
 typedef struct StringInternTable {
-    char** strings;
-    int capacity;
-    int used;
+    StringInternEntry *buckets[INTERN_TABLE_SIZE];
 } StringInternTable;
 
 // A single cached truncated string

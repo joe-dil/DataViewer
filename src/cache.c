@@ -54,30 +54,39 @@ static char* pool_strdup(struct DSVViewer *viewer, const char* str) {
 // Looks for a string in the intern table. If not found, it adds it.
 static const char* intern_string(struct DSVViewer *viewer, const char* str) {
     StringInternTable *table = viewer->intern_table;
-    if (!table) return pool_strdup(viewer, str);
+    if (!table) return pool_strdup(viewer, str); // Fallback if interning is off
 
-    for (int i = 0; i < table->used; i++) {
-        if (strcmp(table->strings[i], str) == 0) {
-            return table->strings[i];
+    uint32_t hash = fnv1a_hash(str);
+    uint32_t index = hash % INTERN_TABLE_SIZE;
+
+    // Look for the string in the bucket's linked list
+    StringInternEntry *entry = table->buckets[index];
+    while (entry) {
+        if (strcmp(entry->str, str) == 0) {
+            return entry->str; // Found it
         }
+        entry = entry->next;
     }
 
-    if (table->used >= table->capacity) {
-        table->capacity *= 2;
-        table->strings = realloc(table->strings, sizeof(char*) * table->capacity);
-        if (!table->strings) {
-            perror("Failed to reallocate intern table");
-            return NULL;
-        }
+    // String not found, create a new entry
+    StringInternEntry *new_entry = malloc(sizeof(StringInternEntry));
+    if (!new_entry) {
+        perror("Failed to allocate string intern entry");
+        return NULL; // Can't intern, fallback might be needed
     }
 
-    char* new_str = strdup(str);
-    if (!new_str) {
+    new_entry->str = strdup(str);
+    if (!new_entry->str) {
         perror("Failed to strdup for intern table");
+        free(new_entry);
         return NULL;
     }
-    table->strings[table->used] = new_str;
-    return table->strings[table->used++];
+
+    // Add the new entry to the front of the bucket's list
+    new_entry->next = table->buckets[index];
+    table->buckets[index] = new_entry;
+    
+    return new_entry->str;
 }
 
 // Truncates a string using wide characters to respect display width
@@ -209,22 +218,24 @@ void init_string_intern_table(struct DSVViewer *viewer) {
         perror("Failed to allocate string intern table");
         exit(1);
     }
-    viewer->intern_table->capacity = 1024;
-    viewer->intern_table->used = 0;
-    viewer->intern_table->strings = malloc(sizeof(char*) * viewer->intern_table->capacity);
-    if (!viewer->intern_table->strings) {
-        perror("Failed to allocate strings for intern table");
-        exit(1);
+    // Initialize all buckets to NULL
+    for (int i = 0; i < INTERN_TABLE_SIZE; i++) {
+        viewer->intern_table->buckets[i] = NULL;
     }
 }
 
 void cleanup_string_intern_table(struct DSVViewer *viewer) {
     if (!viewer->intern_table) return;
 
-    for (int i = 0; i < viewer->intern_table->used; i++) {
-        free(viewer->intern_table->strings[i]);
+    for (int i = 0; i < INTERN_TABLE_SIZE; i++) {
+        StringInternEntry *entry = viewer->intern_table->buckets[i];
+        while (entry) {
+            StringInternEntry *next = entry->next;
+            free(entry->str); // Free the duplicated string
+            free(entry);      // Free the entry struct itself
+            entry = next;
+        }
     }
-    free(viewer->intern_table->strings);
     free(viewer->intern_table);
 }
 
