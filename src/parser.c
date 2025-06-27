@@ -300,9 +300,9 @@ void cleanup_viewer(DSVViewer *viewer) {
 // --- Core Parsing Logic ---
 
 // Helper to record a new field, avoiding duplicate code.
-static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_count, int max_fields, size_t field_start, size_t current_pos, int has_escapes) {
+static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_count, int max_fields, size_t field_start, size_t current_pos, int needs_unescaping) {
     if (*field_count < (size_t)max_fields) {
-        fields[*field_count] = (FieldDesc){viewer->file_data->data + field_start, current_pos - field_start, has_escapes};
+        fields[*field_count] = (FieldDesc){viewer->file_data->data + field_start, current_pos - field_start, needs_unescaping};
         (*field_count)++;
     }
 }
@@ -312,7 +312,7 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
 
     size_t field_count = 0;
     int in_quotes = 0;
-    int has_escapes = 0;
+    int needs_unescaping = 0;
     size_t i = offset;
     size_t field_start = offset;
     const char *data = viewer->file_data->data;
@@ -324,21 +324,21 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
 
         if (in_quotes) {
             if (c == '"') {
-                // Check for escaped quote ("")
+                // Check for an escaped quote ("")
                 if (i + 1 < length && data[i + 1] == '"') {
-                    has_escapes = 1;
-                    i += 2; // Skip over the escaped quote
-                    continue;
+                    needs_unescaping = 1;
+                    i++; // Skip the second quote; loop increment will skip the first
+                } else {
+                    in_quotes = 0; // This is a closing quote
                 }
-                in_quotes = 0;
             }
-        } else {
+        } else { // Not in quotes
             if (c == '"') {
-                in_quotes = 1;
+                in_quotes = 1; // This is an opening quote
             } else if (c == delimiter) {
-                record_field(viewer, fields, &field_count, max_fields, field_start, i, has_escapes);
+                record_field(viewer, fields, &field_count, max_fields, field_start, i, needs_unescaping);
                 field_start = i + 1;
-                has_escapes = 0;
+                needs_unescaping = 0;
             } else if (c == '\n') {
                 break; // End of line
             }
@@ -347,7 +347,7 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     }
     
     // Record the final field after the loop
-    record_field(viewer, fields, &field_count, max_fields, field_start, i, has_escapes);
+    record_field(viewer, fields, &field_count, max_fields, field_start, i, needs_unescaping);
 
     viewer->file_data->num_fields = field_count;
     return field_count;
