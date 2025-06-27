@@ -7,6 +7,17 @@
 #include <pthread.h>
 #include <sys/time.h>
 
+// Constants to replace magic numbers
+#define DELIMITER_DETECTION_SAMPLE_SIZE 1024
+#define LINE_ESTIMATION_SAMPLE_SIZE 65536
+#define LINE_CAPACITY_GROWTH_FACTOR 1.2
+#define DEFAULT_CHARS_PER_LINE 80
+#define COLUMN_ANALYSIS_SAMPLE_LINES 1000
+#define MAX_COLUMN_WIDTH 16
+#define MIN_COLUMN_WIDTH 4
+#define CACHE_THRESHOLD_LINES 500
+#define CACHE_THRESHOLD_COLS 20
+
 // Simple timing utility for profiling
 static double get_time_ms(void) {
     struct timeval tv;
@@ -18,14 +29,14 @@ static double get_time_ms(void) {
 static char detect_delimiter(const char *data, size_t length);
 static int load_file(struct DSVViewer *viewer, const char *filename);
 static void unload_file(struct DSVViewer *viewer);
-static void scan_file(DSVViewer *viewer);
-static void analyze_columns(struct DSVViewer *viewer);
+static int scan_file(DSVViewer *viewer);
+static int analyze_columns(struct DSVViewer *viewer);
 
 
 // --- Delimiter Detection ---
 static char detect_delimiter(const char *data, size_t length) {
     int comma_count = 0, tab_count = 0, pipe_count = 0;
-    size_t scan_len = (length < 1024) ? length : 1024;
+    size_t scan_len = (length < DELIMITER_DETECTION_SAMPLE_SIZE) ? length : DELIMITER_DETECTION_SAMPLE_SIZE;
     for (size_t i = 0; i < scan_len; i++) {
         if (data[i] == ',') comma_count++;
         else if (data[i] == '\t') tab_count++;
@@ -55,7 +66,7 @@ static void unload_file(struct DSVViewer *viewer) {
 
 // --- File Scanning ---
 static size_t estimate_line_count(DSVViewer *viewer) {
-    const size_t sample_size = (viewer->length < 65536) ? viewer->length : 65536;
+    const size_t sample_size = (viewer->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->length : LINE_ESTIMATION_SAMPLE_SIZE;
     if (sample_size == 0) return 1;
     
     // Count newlines in sample using memchr (much faster than byte-by-byte)
@@ -70,14 +81,19 @@ static size_t estimate_line_count(DSVViewer *viewer) {
         search_start = newline + 1;
     }
     
-    if (sample_lines == 0) return (viewer->length / 80) + 1;
+    if (sample_lines == 0) return (viewer->length / DEFAULT_CHARS_PER_LINE) + 1;
     double avg_line_len = (double)sample_size / sample_lines;
-    return (size_t)((viewer->length / avg_line_len) * 1.2) + 1;
+    return (size_t)((viewer->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
 }
 
-static void scan_file(DSVViewer *viewer) {
+static int scan_file(DSVViewer *viewer) {
     viewer->capacity = estimate_line_count(viewer);
     viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
+    if (!viewer->line_offsets) {
+        fprintf(stderr, "Failed to allocate memory for line offsets\n");
+        return -1;
+    }
+    
     viewer->num_lines = 0;
     viewer->line_offsets[viewer->num_lines++] = 0;
     
@@ -92,7 +108,12 @@ static void scan_file(DSVViewer *viewer) {
         // Check if we need to expand capacity
         if (viewer->num_lines >= viewer->capacity) {
             viewer->capacity *= 2;
-            viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+            size_t *new_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+            if (!new_offsets) {
+                fprintf(stderr, "Failed to expand line offsets array\n");
+                return -1;
+            }
+            viewer->line_offsets = new_offsets;
         }
         
         // Store offset to character after newline
@@ -106,14 +127,20 @@ static void scan_file(DSVViewer *viewer) {
     
     // Trim capacity to actual size
     if (viewer->capacity > viewer->num_lines) {
-        viewer->line_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
+        size_t *trimmed_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
+        if (trimmed_offsets) {
+            viewer->line_offsets = trimmed_offsets;
+        }
+        // If realloc fails for trimming, we just keep the larger array - not a critical error
     }
+    
+    return 0;
 }
 
 // --- Column Analysis ---
-static void analyze_columns(struct DSVViewer *viewer) {
-    // Simple and fast: analyze first 1000 lines max, single threaded
-    size_t sample_lines = viewer->num_lines > 1000 ? 1000 : viewer->num_lines;
+static int analyze_columns(struct DSVViewer *viewer) {
+    // Simple and fast: analyze first N lines max, single threaded
+    size_t sample_lines = viewer->num_lines > COLUMN_ANALYSIS_SAMPLE_LINES ? COLUMN_ANALYSIS_SAMPLE_LINES : viewer->num_lines;
     
     int col_widths[MAX_COLS] = {0};
     size_t max_cols = 0;
@@ -124,7 +151,7 @@ static void analyze_columns(struct DSVViewer *viewer) {
         if (num_fields > max_cols) max_cols = num_fields;
         
         for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
-            if (col_widths[col] >= 16) continue; // Cap at 16 chars
+            if (col_widths[col] >= MAX_COLUMN_WIDTH) continue; // Cap at max chars
             int width = calculate_field_display_width(viewer, &fields[col]);
             if (width > col_widths[col]) col_widths[col] = width;
         }
@@ -133,11 +160,17 @@ static void analyze_columns(struct DSVViewer *viewer) {
     // Set final results
     viewer->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
     viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
-    for (size_t i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = col_widths[i] > 16 ? 16 : (col_widths[i] < 4 ? 4 : col_widths[i]);
+    if (!viewer->col_widths) {
+        fprintf(stderr, "Failed to allocate memory for column widths\n");
+        return -1;
     }
     
-
+    for (size_t i = 0; i < viewer->num_cols; i++) {
+        viewer->col_widths[i] = col_widths[i] > MAX_COLUMN_WIDTH ? MAX_COLUMN_WIDTH : 
+                               (col_widths[i] < MIN_COLUMN_WIDTH ? MIN_COLUMN_WIDTH : col_widths[i]);
+    }
+    
+    return 0;
 }
 
 // --- Main Initialization Orchestrator ---
@@ -160,25 +193,34 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     // Phase 3: Memory allocation
     double alloc_start = get_time_ms();
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    if (!viewer->fields) {
+        fprintf(stderr, "Failed to allocate memory for field descriptors\n");
+        return -1;
+    }
     phase_time = get_time_ms() - alloc_start;
     printf("Field allocation: %.2f ms\n", phase_time);
     
     // Phase 4: File scanning
     double scan_start = get_time_ms();
-    scan_file(viewer);
+    if (scan_file(viewer) != 0) return -1;
     phase_time = get_time_ms() - scan_start;
     printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->num_lines);
     
     // Phase 5: Column analysis
     double analysis_start = get_time_ms();
-    analyze_columns(viewer);
+    if (analyze_columns(viewer) != 0) return -1;
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
-    if (viewer->num_lines > 500 || viewer->num_cols > 20) init_cache_system((struct DSVViewer*)viewer);
-    else { viewer->mem_pool = NULL; viewer->display_cache = NULL; viewer->intern_table = NULL; }
+    if (viewer->num_lines > CACHE_THRESHOLD_LINES || viewer->num_cols > CACHE_THRESHOLD_COLS) {
+        init_cache_system((struct DSVViewer*)viewer);
+    } else { 
+        viewer->mem_pool = NULL; 
+        viewer->display_cache = NULL; 
+        viewer->intern_table = NULL; 
+    }
     phase_time = get_time_ms() - cache_start;
     printf("Cache initialization: %.2f ms\n", phase_time);
     
