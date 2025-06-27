@@ -3,15 +3,18 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "memory_pool.h"
-#include "string_intern.h"
 
 // Forward declare to avoid circular dependency
 struct DSVViewer;
 
-// Cache for display widths and truncated strings
-#define CACHE_SIZE 16384 // Power of 2 for efficient modulo
+// --- Constants ---
+#define CACHE_SIZE 16384
 #define MAX_TRUNCATED_VERSIONS 8
+#define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
+#define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)
+#define INTERN_TABLE_SIZE 4096
+
+// --- Structs ---
 
 // A single cached truncated string
 typedef struct TruncatedString {
@@ -34,9 +37,29 @@ typedef struct DisplayCache {
     DisplayCacheEntry *entries[CACHE_SIZE];
 } DisplayCache;
 
-// Function declarations for the cache subsystem
-void init_display_cache(struct DSVViewer *viewer);
-void cleanup_display_cache(struct DSVViewer *viewer);
+// A single entry in the string intern table's hash map
+typedef struct StringInternEntry {
+    char *str;
+    struct StringInternEntry *next;
+} StringInternEntry;
+
+// A hash-table-based string interning table
+typedef struct StringInternTable {
+    StringInternEntry *buckets[INTERN_TABLE_SIZE];
+} StringInternTable;
+
+// The memory pool for the cache system
+typedef struct CacheMemoryPool {
+    DisplayCacheEntry* entry_pool;
+    int entry_pool_used;
+    char* string_pool;
+    size_t string_pool_used;
+} CacheMemoryPool;
+
+
+// --- Public Function Declarations for the Cache Subsystem ---
+void init_cache_system(struct DSVViewer *viewer);
+void cleanup_cache_system(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 
 #endif // CACHE_H 

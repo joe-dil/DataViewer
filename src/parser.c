@@ -1,9 +1,10 @@
 #include "viewer.h"
-#include "file_handler.h"
-#include "file_scanner.h"
-#include "column_analyzer.h"
 #include <wchar.h>
-#include <unistd.h> // For sysconf
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <pthread.h>
 
 // SIMD includes for vectorized parsing
 #ifdef __SSE2__
@@ -36,63 +37,147 @@ static char detect_delimiter(const char *data, size_t length) {
     return ',';
 }
 
-int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
-    if (load_file(viewer, filename) != 0) {
-        return -1;
-    }
-    
-    // Auto-detect delimiter if not specified
-    if (delimiter == 0) {
-        viewer->delimiter = detect_delimiter(viewer->data, viewer->length);
-    } else {
-        viewer->delimiter = delimiter;
-    }
-    
-    // Allocate zero-copy field descriptors instead of field buffers
-    viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
-    
-    scan_file(viewer);
-    // Buffer pool is now embedded, no init needed.
-    
-    // Determine the number of threads to use
-    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    viewer->num_threads = (num_cores > 0) ? (int)num_cores : 1;
+// --- Static Helper Declarations ---
+static int load_file(struct DSVViewer *viewer, const char *filename);
+static void unload_file(struct DSVViewer *viewer);
+static void scan_file(DSVViewer *viewer);
+static void analyze_columns(struct DSVViewer *viewer);
+static void* analyze_columns_worker(void *arg);
 
-    analyze_columns(viewer);
-    
-    // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
-    if (viewer->num_lines > 500 || viewer->num_cols > 20) {
-        init_cache_memory_pool((struct DSVViewer*)viewer);
-        init_display_cache((struct DSVViewer*)viewer);
-        init_string_intern_table((struct DSVViewer*)viewer);
-    } else {
-        viewer->mem_pool = NULL;
-        viewer->display_cache = NULL;
-        viewer->intern_table = NULL;
+// --- File Handling ---
+static int load_file(struct DSVViewer *viewer, const char *filename) {
+    struct stat st;
+    viewer->fd = open(filename, O_RDONLY);
+    if (viewer->fd == -1) { perror("Failed to open file"); return -1; }
+    if (fstat(viewer->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->fd); return -1; }
+    viewer->length = st.st_size;
+    viewer->data = mmap(NULL, viewer->length, PROT_READ, MAP_PRIVATE, viewer->fd, 0);
+    if (viewer->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->fd); return -1; }
+    return 0;
+}
+
+static void unload_file(struct DSVViewer *viewer) {
+    if (viewer->data != MAP_FAILED) munmap(viewer->data, viewer->length);
+    if (viewer->fd != -1) close(viewer->fd);
+}
+
+// --- File Scanning ---
+static size_t estimate_line_count(DSVViewer *viewer) {
+    const size_t sample_size = (viewer->length < 65536) ? viewer->length : 65536;
+    if (sample_size == 0) return 1;
+    int sample_lines = 0;
+    size_t bytes_in_sample = 0;
+    char *p = (char*)viewer->data, *end = p + sample_size;
+    int in_quotes = 0;
+    while (p < end && sample_lines < 100) {
+        if (*p == '"') in_quotes = !in_quotes;
+        else if (*p == '\n' && !in_quotes) {
+            sample_lines++;
+            bytes_in_sample = (p - (char*)viewer->data);
+        }
+        p++;
     }
-    
+    if (sample_lines == 0) return (viewer->length / 80) + 1;
+    double avg_line_len = (double)bytes_in_sample / sample_lines;
+    return (size_t)((viewer->length / avg_line_len) * 1.2) + 1;
+}
+
+static void scan_file(DSVViewer *viewer) {
+    viewer->capacity = estimate_line_count(viewer);
+    viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
+    viewer->num_lines = 0;
+    viewer->line_offsets[viewer->num_lines++] = 0;
+    char *p = (char*)viewer->data, *end = p + viewer->length;
+    int in_quotes = 0;
+    for (char *current = p; current < end; current++) {
+        if (*current == '"') in_quotes = !in_quotes;
+        else if (*current == '\n' && !in_quotes) {
+            if (viewer->num_lines >= viewer->capacity) {
+                viewer->capacity *= 2;
+                viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+            }
+            if (current + 1 < end) viewer->line_offsets[viewer->num_lines++] = (current - p) + 1;
+        }
+    }
+    if (viewer->capacity > viewer->num_lines) {
+        viewer->line_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
+    }
+}
+
+// --- Column Analysis ---
+typedef struct {
+    DSVViewer *viewer;
+    size_t start_line, end_line;
+    int *thread_widths;
+    size_t thread_max_cols;
+} ThreadData;
+
+static void* analyze_columns_worker(void *arg) {
+    ThreadData *data = (ThreadData*)arg;
+    FieldDesc thread_fields[MAX_COLS];
+    for (size_t i = data->start_line; i < data->end_line; i++) {
+        size_t num_fields = parse_line(data->viewer, data->viewer->line_offsets[i], thread_fields, MAX_COLS);
+        if (num_fields > data->thread_max_cols) data->thread_max_cols = num_fields;
+        for (size_t col = 0; col < num_fields; col++) {
+            if (data->thread_widths[col] >= 16) continue;
+            int width = calculate_field_display_width(data->viewer, &thread_fields[col]);
+            if (width > data->thread_widths[col]) data->thread_widths[col] = width;
+        }
+    }
+    return NULL;
+}
+
+static void analyze_columns(struct DSVViewer *viewer) {
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    viewer->num_threads = (num_cores > 1) ? num_cores : 1;
+    if (viewer->num_lines < 2000 || viewer->num_threads == 1) viewer->num_threads = 1;
+    size_t lines_per_thread = viewer->num_lines / viewer->num_threads;
+    pthread_t threads[viewer->num_threads];
+    ThreadData thread_data[viewer->num_threads];
+    for (int i = 0; i < viewer->num_threads; i++) {
+        thread_data[i] = (ThreadData){.viewer = viewer, .start_line = i * lines_per_thread, .end_line = (i == viewer->num_threads - 1) ? viewer->num_lines : (i + 1) * lines_per_thread, .thread_widths = calloc(MAX_COLS, sizeof(int)), .thread_max_cols = 0};
+        pthread_create(&threads[i], NULL, analyze_columns_worker, &thread_data[i]);
+    }
+    size_t max_cols = 0;
+    int *final_widths = calloc(MAX_COLS, sizeof(int));
+    for (int i = 0; i < viewer->num_threads; i++) {
+        pthread_join(threads[i], NULL);
+        if (thread_data[i].thread_max_cols > max_cols) max_cols = thread_data[i].thread_max_cols;
+        for (size_t j = 0; j < thread_data[i].thread_max_cols; j++) {
+            if (thread_data[i].thread_widths[j] > final_widths[j]) final_widths[j] = thread_data[i].thread_widths[j];
+        }
+        free(thread_data[i].thread_widths);
+    }
+    viewer->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
+    viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
+    for (size_t i = 0; i < viewer->num_cols; i++) {
+        viewer->col_widths[i] = final_widths[i] > 16 ? 16 : (final_widths[i] < 4 ? 4 : final_widths[i]);
+    }
+    free(final_widths);
+}
+
+// --- Main Initialization Orchestrator ---
+int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+    if (load_file(viewer, filename) != 0) return -1;
+    viewer->delimiter = (delimiter == 0) ? detect_delimiter(viewer->data, viewer->length) : delimiter;
+    viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    scan_file(viewer);
+    analyze_columns(viewer);
+    if (viewer->num_lines > 500 || viewer->num_cols > 20) init_cache_system((struct DSVViewer*)viewer);
+    else { viewer->mem_pool = NULL; viewer->display_cache = NULL; viewer->intern_table = NULL; }
     return 0;
 }
 
 static void cleanup_parser_resources(DSVViewer *viewer) {
-    if (viewer->fields) {
-        free(viewer->fields);
-    }
-    if (viewer->line_offsets) {
-        free(viewer->line_offsets);
-    }
-    if (viewer->col_widths) {
-        free(viewer->col_widths);
-    }
+    if (viewer->fields) free(viewer->fields);
+    if (viewer->line_offsets) free(viewer->line_offsets);
+    if (viewer->col_widths) free(viewer->col_widths);
 }
 
 void cleanup_viewer(DSVViewer *viewer) {
     unload_file(viewer);
     cleanup_parser_resources(viewer);
-    cleanup_display_cache((struct DSVViewer*)viewer);
-    cleanup_cache_memory_pool((struct DSVViewer*)viewer);
-    // Buffer pool is now embedded, no cleanup needed.
-    cleanup_string_intern_table((struct DSVViewer*)viewer);
+    cleanup_cache_system((struct DSVViewer*)viewer);
 }
 
 // Zero-copy parser - returns field descriptors pointing into original data
