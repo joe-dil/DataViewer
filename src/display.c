@@ -3,7 +3,7 @@
 #include <string.h>
 
 // Unified function to draw any CSV line (header or data)
-static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col, int is_header) {
+static void draw_csv_line(int y, DSVViewer *viewer, int file_line, int start_col, int is_header) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
@@ -35,7 +35,7 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
             }
         }
         
-        char *rendered_field = viewer->buffer_pool->buffer1;
+        char *rendered_field = viewer->buffer_pool->buffer_one;
         render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
@@ -43,7 +43,7 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
         if (is_header && col_width < original_col_width) {
             // Pad truncated header fields with spaces
             int text_len = strlen(display_string);
-            char *padded_field = viewer->buffer_pool->buffer2;
+            char *padded_field = viewer->buffer_pool->buffer_two;
             strcpy(padded_field, display_string);
             for (int i = text_len; i < col_width; i++) {
                 padded_field[i] = ' ';
@@ -70,7 +70,7 @@ static void draw_csv_line(int y, CSVViewer *viewer, int file_line, int start_col
     }
 }
 
-void display_data(CSVViewer *viewer, int start_row, int start_col) {
+void display_data(DSVViewer *viewer, int start_row, int start_col) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     

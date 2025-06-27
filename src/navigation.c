@@ -1,6 +1,6 @@
 #include "viewer.h"
 
-static void handle_input(int ch, CSVViewer *viewer, int *start_row, int *start_col, int page_size) {
+static void handle_input(int ch, DSVViewer *viewer, int *start_row, int *start_col, int page_size) {
     switch (ch) {
         case 'q':
         case 'Q':
@@ -55,7 +55,7 @@ static void handle_input(int ch, CSVViewer *viewer, int *start_row, int *start_c
     }
 }
 
-void run_viewer(CSVViewer *viewer) {
+void run_viewer(DSVViewer *viewer) {
     int start_row = 0, start_col = 0;
     int ch;
     int rows, cols;

@@ -18,7 +18,7 @@ static uint32_t fnv1a_hash(const char *str) {
 }
 
 // Helper to calculate display width, backing off to strlen for invalid multi-byte chars
-static int calculate_display_width(struct CSVViewer* viewer, const char* str) {
+static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
     wchar_t* wcs = viewer->buffer_pool->wide_buffer;
     mbstowcs(wcs, str, UTILS_MAX_FIELD_LEN);
     int width = wcswidth(wcs, UTILS_MAX_FIELD_LEN);
@@ -26,7 +26,7 @@ static int calculate_display_width(struct CSVViewer* viewer, const char* str) {
 }
 
 // Helper to allocate a DisplayCacheEntry from the memory pool
-static DisplayCacheEntry* pool_alloc_entry(struct CSVViewer *viewer) {
+static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer) {
     if (!viewer->mem_pool || !viewer->mem_pool->entry_pool) return NULL;
 
     if (viewer->mem_pool->entry_pool_used >= CACHE_ENTRY_POOL_SIZE) {
@@ -36,7 +36,7 @@ static DisplayCacheEntry* pool_alloc_entry(struct CSVViewer *viewer) {
 }
 
 // Helper to copy a string into the string memory pool (replaces strdup)
-static char* pool_strdup(struct CSVViewer *viewer, const char* str) {
+static char* pool_strdup(struct DSVViewer *viewer, const char* str) {
     if (!viewer->mem_pool || !viewer->mem_pool->string_pool) return NULL;
     
     size_t len = strlen(str) + 1;
@@ -52,7 +52,7 @@ static char* pool_strdup(struct CSVViewer *viewer, const char* str) {
 }
 
 // Looks for a string in the intern table. If not found, it adds it.
-static const char* intern_string(struct CSVViewer *viewer, const char* str) {
+static const char* intern_string(struct DSVViewer *viewer, const char* str) {
     StringInternTable *table = viewer->intern_table;
     if (!table) return pool_strdup(viewer, str);
 
@@ -81,7 +81,7 @@ static const char* intern_string(struct CSVViewer *viewer, const char* str) {
 }
 
 // Truncates a string using wide characters to respect display width
-static void truncate_str(struct CSVViewer* viewer, const char* src, char* dest, int width) {
+static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, int width) {
     wchar_t* wcs = viewer->buffer_pool->wide_buffer;
     mbstowcs(wcs, src, UTILS_MAX_FIELD_LEN);
 
@@ -101,7 +101,7 @@ static void truncate_str(struct CSVViewer* viewer, const char* src, char* dest, 
     wcstombs(dest, wcs, UTILS_MAX_FIELD_LEN);
 }
 
-const char* get_truncated_string(struct CSVViewer *viewer, const char* original, int width) {
+const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width) {
     if (!viewer->display_cache) return original;
     static char static_buffer[UTILS_MAX_FIELD_LEN];
     uint32_t hash = fnv1a_hash(original);
@@ -120,7 +120,7 @@ const char* get_truncated_string(struct CSVViewer *viewer, const char* original,
         entry = entry->next;
     }
 
-    char *truncated_buffer = viewer->buffer_pool->buffer3;
+    char *truncated_buffer = viewer->buffer_pool->buffer_three;
     truncate_str(viewer, original, truncated_buffer, width);
 
     if (entry) {
@@ -174,7 +174,7 @@ const char* get_truncated_string(struct CSVViewer *viewer, const char* original,
     }
 }
 
-void init_cache_memory_pool(struct CSVViewer *viewer) {
+void init_cache_memory_pool(struct DSVViewer *viewer) {
     viewer->mem_pool = malloc(sizeof(CacheMemoryPool));
     if (!viewer->mem_pool) {
         viewer->display_cache = NULL;
@@ -196,14 +196,14 @@ void init_cache_memory_pool(struct CSVViewer *viewer) {
     }
 }
 
-void cleanup_cache_memory_pool(struct CSVViewer *viewer) {
+void cleanup_cache_memory_pool(struct DSVViewer *viewer) {
     if (!viewer->mem_pool) return;
     free(viewer->mem_pool->entry_pool);
     free(viewer->mem_pool->string_pool);
     free(viewer->mem_pool);
 }
 
-void init_string_intern_table(struct CSVViewer *viewer) {
+void init_string_intern_table(struct DSVViewer *viewer) {
     viewer->intern_table = malloc(sizeof(StringInternTable));
     if (!viewer->intern_table) {
         perror("Failed to allocate string intern table");
@@ -218,7 +218,7 @@ void init_string_intern_table(struct CSVViewer *viewer) {
     }
 }
 
-void cleanup_string_intern_table(struct CSVViewer *viewer) {
+void cleanup_string_intern_table(struct DSVViewer *viewer) {
     if (!viewer->intern_table) return;
 
     for (int i = 0; i < viewer->intern_table->used; i++) {
@@ -228,7 +228,7 @@ void cleanup_string_intern_table(struct CSVViewer *viewer) {
     free(viewer->intern_table);
 }
 
-void init_display_cache(struct CSVViewer *viewer) {
+void init_display_cache(struct DSVViewer *viewer) {
     viewer->display_cache = malloc(sizeof(DisplayCache));
     if (viewer->display_cache) {
         for (int i = 0; i < CACHE_SIZE; i++) {
@@ -237,7 +237,7 @@ void init_display_cache(struct CSVViewer *viewer) {
     }
 }
 
-void cleanup_display_cache(struct CSVViewer *viewer) {
+void cleanup_display_cache(struct DSVViewer *viewer) {
     if (!viewer->display_cache) return;
     free(viewer->display_cache);
 } 

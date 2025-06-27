@@ -37,7 +37,7 @@ typedef struct {
 } FieldDesc;
 
 // Core data structure
-typedef struct CSVViewer {
+typedef struct DSVViewer {
     char *data;
     size_t length;
     int fd;
@@ -56,24 +56,24 @@ typedef struct CSVViewer {
     struct CacheMemoryPool *mem_pool;
     struct BufferPool *buffer_pool;
     struct StringInternTable *intern_table;
-} CSVViewer;
+} DSVViewer;
 
 // Core application function declarations
 
-// CSV Parser functions (csv_parser.c)
-int init_viewer(CSVViewer *viewer, const char *filename, char delimiter);
-void cleanup_viewer(CSVViewer *viewer);
-void scan_file(CSVViewer *viewer);
-int parse_line(CSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
+// Parser functions (parser.c)
+int init_viewer(DSVViewer *viewer, const char *filename, char delimiter);
+void cleanup_viewer(DSVViewer *viewer);
+void scan_file(DSVViewer *viewer);
+int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
 char detect_delimiter(const char *data, size_t length);
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);
-int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field);
+int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field);
 
 // Display functions (display.c)
-void display_data(CSVViewer *viewer, int start_row, int start_col);
+void display_data(DSVViewer *viewer, int start_row, int start_col);
 void show_help(void);
 
 // Navigation functions (navigation.c)
-void run_viewer(CSVViewer *viewer);
+void run_viewer(DSVViewer *viewer);
 
 #endif // VIEWER_H 

@@ -1,7 +1,7 @@
 #include "viewer.h"
 #include <wchar.h>
 
-int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
+int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
     
     viewer->fd = open(filename, O_RDONLY);
@@ -36,7 +36,7 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     
     scan_file(viewer);
-    init_buffer_pool((struct CSVViewer*)viewer);
+    init_buffer_pool((struct DSVViewer*)viewer);
     
     // Single-pass column detection and width calculation (first 1000 lines)
     viewer->num_cols = 0;
@@ -71,9 +71,9 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
     // For small files, this saves a significant amount of memory (~4MB).
     if (viewer->num_lines > 500 || viewer->num_cols > 20) {
-        init_cache_memory_pool((struct CSVViewer*)viewer);
-        init_display_cache((struct CSVViewer*)viewer);
-        init_string_intern_table((struct CSVViewer*)viewer);
+        init_cache_memory_pool((struct DSVViewer*)viewer);
+        init_display_cache((struct DSVViewer*)viewer);
+        init_string_intern_table((struct DSVViewer*)viewer);
     } else {
         viewer->mem_pool = NULL;
         viewer->display_cache = NULL;
@@ -90,7 +90,7 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     return 0;
 }
 
-void cleanup_viewer(CSVViewer *viewer) {
+void cleanup_viewer(DSVViewer *viewer) {
     if (viewer->data != MAP_FAILED) {
         munmap(viewer->data, viewer->length);
     }
@@ -106,10 +106,10 @@ void cleanup_viewer(CSVViewer *viewer) {
     if (viewer->col_widths) {
         free(viewer->col_widths);
     }
-    cleanup_display_cache((struct CSVViewer*)viewer);
-    cleanup_cache_memory_pool((struct CSVViewer*)viewer);
-    cleanup_buffer_pool((struct CSVViewer*)viewer);
-    cleanup_string_intern_table((struct CSVViewer*)viewer);
+    cleanup_display_cache((struct DSVViewer*)viewer);
+    cleanup_cache_memory_pool((struct DSVViewer*)viewer);
+    cleanup_buffer_pool((struct DSVViewer*)viewer);
+    cleanup_string_intern_table((struct DSVViewer*)viewer);
 }
 
 char detect_delimiter(const char *data, size_t length) {
@@ -136,7 +136,7 @@ char detect_delimiter(const char *data, size_t length) {
     return ','; // Default to comma
 }
 
-void scan_file(CSVViewer *viewer) {
+void scan_file(DSVViewer *viewer) {
     // Estimate lines to pre-allocate a more appropriately sized buffer.
     // This reduces the number of realloc() calls for large files.
     // We assume an average line length of 80, with a minimum of 8192 lines.
@@ -204,7 +204,7 @@ void scan_file(CSVViewer *viewer) {
 }
 
 // Zero-copy parser - returns field descriptors pointing into original data
-int parse_line(CSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
+int parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
     if (offset >= viewer->length) return 0;
     
     int field_count = 0;
@@ -307,7 +307,7 @@ char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
 }
 
 // Calculate display width of a field without fully rendering it
-int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field) {
+int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
     if (!field->start || field->length == 0) {
         return 0;
     }
@@ -323,7 +323,7 @@ int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field) {
     if (field->needs_unescaping) {
         // For fields with escapes, we need to render to get accurate width
         // This is the slow path, but only for fields with escaped quotes
-        char *temp_buffer = viewer->buffer_pool->buffer1;
+        char *temp_buffer = viewer->buffer_pool->buffer_one;
         render_field(field, temp_buffer, MAX_FIELD_LEN);
         
         wchar_t *wcs = viewer->buffer_pool->wide_buffer;
@@ -337,7 +337,7 @@ int calculate_field_display_width(CSVViewer *viewer, const FieldDesc *field) {
         size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
         
         // Create temporary null-terminated string for mbstowcs
-        char *temp = viewer->buffer_pool->buffer1;
+        char *temp = viewer->buffer_pool->buffer_one;
         memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
         temp[copy_len] = '\0';
         

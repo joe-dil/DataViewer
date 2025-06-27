@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-void init_buffer_pool(struct CSVViewer *viewer) {
+void init_buffer_pool(struct DSVViewer *viewer) {
     viewer->buffer_pool = malloc(sizeof(BufferPool));
     if (!viewer->buffer_pool) {
         perror("Failed to allocate buffer pool");
@@ -11,7 +11,7 @@ void init_buffer_pool(struct CSVViewer *viewer) {
     }
 }
 
-void cleanup_buffer_pool(struct CSVViewer *viewer) {
+void cleanup_buffer_pool(struct DSVViewer *viewer) {
     if (viewer->buffer_pool) {
         free(viewer->buffer_pool);
     }

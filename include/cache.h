@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 // Forward declare to avoid circular dependency
-struct CSVViewer;
+struct DSVViewer;
 
 // Cache for display widths and truncated strings
 #define CACHE_SIZE 16384 // Power of 2 for efficient modulo
@@ -52,12 +52,12 @@ typedef struct CacheMemoryPool {
 } CacheMemoryPool;
 
 // Function declarations for the cache subsystem
-void init_cache_memory_pool(struct CSVViewer *viewer);
-void cleanup_cache_memory_pool(struct CSVViewer *viewer);
-void init_string_intern_table(struct CSVViewer *viewer);
-void cleanup_string_intern_table(struct CSVViewer *viewer);
-void init_display_cache(struct CSVViewer *viewer);
-void cleanup_display_cache(struct CSVViewer *viewer);
-const char* get_truncated_string(struct CSVViewer *viewer, const char* original, int width);
+void init_cache_memory_pool(struct DSVViewer *viewer);
+void cleanup_cache_memory_pool(struct DSVViewer *viewer);
+void init_string_intern_table(struct DSVViewer *viewer);
+void cleanup_string_intern_table(struct DSVViewer *viewer);
+void init_display_cache(struct DSVViewer *viewer);
+void cleanup_display_cache(struct DSVViewer *viewer);
+const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 
 #endif // CACHE_H 
