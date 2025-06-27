@@ -174,6 +174,50 @@ static int analyze_columns(struct DSVViewer *viewer) {
     return 0;
 }
 
+// --- Component Initialization ---
+static int init_components(DSVViewer *viewer) {
+    // -- Initialize new DisplayState component --
+    viewer->display_state = malloc(sizeof(DisplayState));
+    if (!viewer->display_state) {
+        perror("Failed to allocate for DisplayState");
+        return -1;
+    }
+    memset(viewer->display_state, 0, sizeof(DisplayState));
+
+    // -- Initialize new FileAndParseData component --
+    viewer->file_data = malloc(sizeof(FileAndParseData));
+    if (!viewer->file_data) {
+        perror("Failed to allocate for FileAndParseData");
+        return -1; // display_state will be cleaned up by the caller
+    }
+    memset(viewer->file_data, 0, sizeof(FileAndParseData));
+    return 0;
+}
+
+static void configure_display_settings(DSVViewer *viewer) {
+    // Set the values directly.
+    viewer->display_state->show_header = 1; // Default is 1 (true)
+    
+    // The locale logic is now coupled with the DisplayState.
+    char *locale = setlocale(LC_CTYPE, NULL);
+    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
+        viewer->display_state->supports_unicode = 1;
+        viewer->display_state->separator = UNICODE_SEPARATOR;
+    } else {
+        viewer->display_state->supports_unicode = 0;
+        viewer->display_state->separator = ASCII_SEPARATOR;
+    }
+}
+
+static void initialize_cache_if_needed(DSVViewer *viewer) {
+    if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
+        if (init_cache_system((struct DSVViewer*)viewer) != 0) {
+            fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
+            // The cleanup function will safely handle the partially initialized cache components.
+        }
+    }
+}
+
 // --- Main Initialization Orchestrator ---
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double start_time = get_time_ms();
@@ -183,21 +227,9 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     // Ensure all pointers are NULL so cleanup is safe
     memset(viewer, 0, sizeof(DSVViewer));
     
-    // -- Initialize new DisplayState component --
-    viewer->display_state = malloc(sizeof(DisplayState));
-    if (!viewer->display_state) {
-        perror("Failed to allocate for DisplayState");
+    if (init_components(viewer) != 0) {
         goto cleanup;
     }
-    memset(viewer->display_state, 0, sizeof(DisplayState));
-    
-    // -- Initialize new FileAndParseData component --
-    viewer->file_data = malloc(sizeof(FileAndParseData));
-    if (!viewer->file_data) {
-        perror("Failed to allocate for FileAndParseData");
-        goto cleanup;
-    }
-    memset(viewer->file_data, 0, sizeof(FileAndParseData));
     
     // Phase 1: File loading
     double load_start = get_time_ms();
@@ -233,27 +265,11 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
-    // Set the values directly.
-    viewer->display_state->show_header = 1; // Default is 1 (true)
-    
-    // The locale logic is now coupled with the DisplayState.
-    char *locale = setlocale(LC_CTYPE, NULL);
-    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
-        viewer->display_state->supports_unicode = 1;
-        viewer->display_state->separator = UNICODE_SEPARATOR;
-    } else {
-        viewer->display_state->supports_unicode = 0;
-        viewer->display_state->separator = ASCII_SEPARATOR;
-    }
+    configure_display_settings(viewer);
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
-    if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
-        if (init_cache_system((struct DSVViewer*)viewer) != 0) {
-            fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
-            // The cleanup function will safely handle the partially initialized cache components.
-        }
-    }
+    initialize_cache_if_needed(viewer);
     phase_time = get_time_ms() - cache_start;
     printf("Cache initialization: %.2f ms\n", phase_time);
     
