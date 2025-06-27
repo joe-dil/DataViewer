@@ -15,7 +15,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
     }
     
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->line_offsets[0], viewer->fields, MAX_COLS);
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, MAX_COLS);
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
@@ -32,7 +32,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
         }
         
         char *rendered_field = viewer->display_state->buffers.buffer_one;
-        render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
+        render_field(&viewer->file_data->fields[col], rendered_field, MAX_FIELD_LEN);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         
@@ -69,7 +69,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
     (void)rows; // Suppress unused warning
     
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], viewer->file_data->fields, MAX_COLS);
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
@@ -77,7 +77,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
         
         char *rendered_field = viewer->display_state->buffers.buffer_one;
-        render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
+        render_field(&viewer->file_data->fields[col], rendered_field, MAX_FIELD_LEN);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         mvaddstr(y, x, display_string);
@@ -109,7 +109,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     
     for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
         size_t file_line = start_row + screen_row - (viewer->display_state->show_header ? 0 : screen_start_row);
-        if (file_line >= viewer->num_lines) break;
+        if (file_line >= viewer->file_data->num_lines) break;
 
         draw_data_row(screen_row, viewer, file_line, start_col);
     }
@@ -117,8 +117,8 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     // Use %zu for size_t types
     mvprintw(rows - 1, 0, "Lines %zu-%zu of %zu | Row: %zu | Col: %zu | q: quit | h: help",
              start_row + 1,
-             (start_row + display_rows > viewer->num_lines) ? viewer->num_lines : start_row + display_rows,
-             viewer->num_lines, start_row + 1, start_col + 1);
+             (start_row + display_rows > viewer->file_data->num_lines) ? viewer->file_data->num_lines : start_row + display_rows,
+             viewer->file_data->num_lines, start_row + 1, start_col + 1);
     
     refresh();
 }

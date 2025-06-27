@@ -51,29 +51,29 @@ static char detect_delimiter(const char *data, size_t length) {
 // --- File Handling ---
 static int load_file(struct DSVViewer *viewer, const char *filename) {
     struct stat st;
-    viewer->fd = open(filename, O_RDONLY);
-    if (viewer->fd == -1) { perror("Failed to open file"); return -1; }
-    if (fstat(viewer->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->fd); return -1; }
-    viewer->length = st.st_size;
-    viewer->data = mmap(NULL, viewer->length, PROT_READ, MAP_PRIVATE, viewer->fd, 0);
-    if (viewer->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->fd); return -1; }
+    viewer->file_data->fd = open(filename, O_RDONLY);
+    if (viewer->file_data->fd == -1) { perror("Failed to open file"); return -1; }
+    if (fstat(viewer->file_data->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->file_data->fd); return -1; }
+    viewer->file_data->length = st.st_size;
+    viewer->file_data->data = mmap(NULL, viewer->file_data->length, PROT_READ, MAP_PRIVATE, viewer->file_data->fd, 0);
+    if (viewer->file_data->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->file_data->fd); return -1; }
     return 0;
 }
 
 static void unload_file(struct DSVViewer *viewer) {
-    if (viewer->data != MAP_FAILED) munmap(viewer->data, viewer->length);
-    if (viewer->fd != -1) close(viewer->fd);
+    if (viewer->file_data->data != MAP_FAILED) munmap(viewer->file_data->data, viewer->file_data->length);
+    if (viewer->file_data->fd != -1) close(viewer->file_data->fd);
 }
 
 // --- File Scanning ---
 static size_t estimate_line_count(DSVViewer *viewer) {
-    const size_t sample_size = (viewer->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->length : LINE_ESTIMATION_SAMPLE_SIZE;
+    const size_t sample_size = (viewer->file_data->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->file_data->length : LINE_ESTIMATION_SAMPLE_SIZE;
     if (sample_size == 0) return 1;
     
     // Count newlines in sample using memchr (much faster than byte-by-byte)
     int sample_lines = 0;
-    const char *search_start = viewer->data;
-    const char *search_end = viewer->data + sample_size;
+    const char *search_start = viewer->file_data->data;
+    const char *search_end = viewer->file_data->data + sample_size;
     
     while (search_start < search_end) {
         const char *newline = memchr(search_start, '\n', search_end - search_start);
@@ -82,55 +82,55 @@ static size_t estimate_line_count(DSVViewer *viewer) {
         search_start = newline + 1;
     }
     
-    if (sample_lines == 0) return (viewer->length / DEFAULT_CHARS_PER_LINE) + 1;
+    if (sample_lines == 0) return (viewer->file_data->length / DEFAULT_CHARS_PER_LINE) + 1;
     double avg_line_len = (double)sample_size / sample_lines;
-    return (size_t)((viewer->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
+    return (size_t)((viewer->file_data->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
 }
 
 static int scan_file(DSVViewer *viewer) {
-    viewer->capacity = estimate_line_count(viewer);
-    viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
-    if (!viewer->line_offsets) {
+    viewer->file_data->capacity = estimate_line_count(viewer);
+    viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
+    if (!viewer->file_data->line_offsets) {
         fprintf(stderr, "Failed to allocate memory for line offsets\n");
         return -1;
     }
     
-    viewer->num_lines = 0;
-    viewer->line_offsets[viewer->num_lines++] = 0;
+    viewer->file_data->num_lines = 0;
+    viewer->file_data->line_offsets[viewer->file_data->num_lines++] = 0;
     
     // Fast newline scanning using memchr for large chunks
-    const char *search_start = viewer->data;
-    const char *file_end = viewer->data + viewer->length;
+    const char *search_start = viewer->file_data->data;
+    const char *file_end = viewer->file_data->data + viewer->file_data->length;
     
     while (search_start < file_end) {
         const char *newline = memchr(search_start, '\n', file_end - search_start);
         if (!newline) break;
         
         // Check if we need to expand capacity
-        if (viewer->num_lines >= viewer->capacity) {
-            viewer->capacity *= 2;
-            size_t *new_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
+        if (viewer->file_data->num_lines >= viewer->file_data->capacity) {
+            viewer->file_data->capacity *= 2;
+            size_t *new_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->capacity * sizeof(size_t));
             if (!new_offsets) {
                 fprintf(stderr, "Failed to expand line offsets array\n");
                 return -1;
             }
-            viewer->line_offsets = new_offsets;
+            viewer->file_data->line_offsets = new_offsets;
         }
         
         // Store offset to character after newline
-        size_t next_line_offset = (newline - viewer->data) + 1;
-        if (next_line_offset < viewer->length) {
-            viewer->line_offsets[viewer->num_lines++] = next_line_offset;
+        size_t next_line_offset = (newline - viewer->file_data->data) + 1;
+        if (next_line_offset < viewer->file_data->length) {
+            viewer->file_data->line_offsets[viewer->file_data->num_lines++] = next_line_offset;
         }
         
         search_start = newline + 1;
     }
     
     // Trim capacity to actual size
-    if (viewer->capacity > viewer->num_lines) {
-        size_t *trimmed_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
+    if (viewer->file_data->capacity > viewer->file_data->num_lines) {
+        size_t *trimmed_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->num_lines * sizeof(size_t));
         if (trimmed_offsets) {
-            viewer->line_offsets = trimmed_offsets;
+            viewer->file_data->line_offsets = trimmed_offsets;
         }
         // If realloc fails for trimming, we just keep the larger array - not a critical error
     }
@@ -141,14 +141,14 @@ static int scan_file(DSVViewer *viewer) {
 // --- Column Analysis ---
 static int analyze_columns(struct DSVViewer *viewer) {
     // Simple and fast: analyze first N lines max, single threaded
-    size_t sample_lines = viewer->num_lines > COLUMN_ANALYSIS_SAMPLE_LINES ? COLUMN_ANALYSIS_SAMPLE_LINES : viewer->num_lines;
+    size_t sample_lines = viewer->file_data->num_lines > COLUMN_ANALYSIS_SAMPLE_LINES ? COLUMN_ANALYSIS_SAMPLE_LINES : viewer->file_data->num_lines;
     
     int col_widths[MAX_COLS] = {0};
     size_t max_cols = 0;
     FieldDesc fields[MAX_COLS];
     
     for (size_t i = 0; i < sample_lines; i++) {
-        size_t num_fields = parse_line(viewer, viewer->line_offsets[i], fields, MAX_COLS);
+        size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[i], fields, MAX_COLS);
         if (num_fields > max_cols) max_cols = num_fields;
         
         for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
@@ -187,6 +187,15 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
         return -1;
     }
     
+    // -- Initialize new FileAndParseData component --
+    viewer->file_data = malloc(sizeof(FileAndParseData));
+    if (!viewer->file_data) {
+        perror("Failed to allocate for FileAndParseData");
+        // We must clean up the previously allocated DisplayState
+        free(viewer->display_state);
+        return -1;
+    }
+    
     // Phase 1: File loading
     double load_start = get_time_ms();
     if (load_file(viewer, filename) != 0) return -1;
@@ -195,14 +204,14 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     
     // Phase 2: Delimiter detection
     double delim_start = get_time_ms();
-    viewer->delimiter = (delimiter == 0) ? detect_delimiter(viewer->data, viewer->length) : delimiter;
+    viewer->file_data->delimiter = (delimiter == 0) ? detect_delimiter(viewer->file_data->data, viewer->file_data->length) : delimiter;
     phase_time = get_time_ms() - delim_start;
     printf("Delimiter detection: %.2f ms\n", phase_time);
     
     // Phase 3: Memory allocation
     double alloc_start = get_time_ms();
-    viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
-    if (!viewer->fields) {
+    viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    if (!viewer->file_data->fields) {
         fprintf(stderr, "Failed to allocate memory for field descriptors\n");
         return -1;
     }
@@ -213,7 +222,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double scan_start = get_time_ms();
     if (scan_file(viewer) != 0) return -1;
     phase_time = get_time_ms() - scan_start;
-    printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->num_lines);
+    printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->file_data->num_lines);
     
     // Phase 5: Column analysis
     double analysis_start = get_time_ms();
@@ -236,7 +245,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
-    if (viewer->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
+    if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
         init_cache_system((struct DSVViewer*)viewer);
     } else { 
         viewer->mem_pool = NULL; 
@@ -252,17 +261,17 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     return 0;
 }
 
-static void cleanup_parser_resources(DSVViewer *viewer) {
-    if (viewer->fields) free(viewer->fields);
-    if (viewer->line_offsets) free(viewer->line_offsets);
-    // The col_widths pointer is now owned by DisplayState, so we no longer free it here.
-    // if (viewer->col_widths) free(viewer->col_widths);
+static void cleanup_file_and_parse_data_resources(DSVViewer *viewer) {
+    if (viewer->file_data) {
+        if (viewer->file_data->fields) free(viewer->file_data->fields);
+        if (viewer->file_data->line_offsets) free(viewer->file_data->line_offsets);
+    }
 }
 
 void cleanup_viewer(DSVViewer *viewer) {
     unload_file(viewer);
-    cleanup_parser_resources(viewer);
     cleanup_cache_system((struct DSVViewer*)viewer);
+    cleanup_file_and_parse_data_resources(viewer);
 
     // The DisplayState component should be freed last, after all other
     // systems that might have used its data are cleaned up.
@@ -271,28 +280,33 @@ void cleanup_viewer(DSVViewer *viewer) {
         free(viewer->display_state->col_widths);
         free(viewer->display_state);
     }
+
+    // Free the FileAndParseData component
+    if (viewer->file_data) {
+        free(viewer->file_data);
+    }
 }
 
 // --- Core Parsing Logic ---
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
-    if (offset >= viewer->length) return 0;
+    if (offset >= viewer->file_data->length) return 0;
     size_t field_count = 0;
     int in_quotes = 0;
     size_t i = offset;
     size_t field_start = offset;
     int has_escapes = 0;
-    while (i < viewer->length && field_count < (size_t)max_fields) {
-        char c = viewer->data[i];
+    while (i < viewer->file_data->length && field_count < (size_t)max_fields) {
+        char c = viewer->file_data->data[i];
         if (c == '"') {
-            if (in_quotes && i + 1 < viewer->length && viewer->data[i + 1] == '"') {
+            if (in_quotes && i + 1 < viewer->file_data->length && viewer->file_data->data[i + 1] == '"') {
                 has_escapes = 1;
                 i += 2; 
                 continue;
             } else {
                 in_quotes = !in_quotes;
             }
-        } else if (c == viewer->delimiter && !in_quotes) {
-            fields[field_count] = (FieldDesc){viewer->data + field_start, i - field_start, has_escapes};
+        } else if (c == viewer->file_data->delimiter && !in_quotes) {
+            fields[field_count] = (FieldDesc){viewer->file_data->data + field_start, i - field_start, has_escapes};
             field_count++;
             field_start = i + 1;
             has_escapes = 0;
@@ -302,9 +316,10 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
         i++;
     }
     if (field_count < (size_t)max_fields) {
-        fields[field_count] = (FieldDesc){viewer->data + field_start, i - field_start, has_escapes};
+        fields[field_count] = (FieldDesc){viewer->file_data->data + field_start, i - field_start, has_escapes};
         field_count++;
     }
+    viewer->file_data->num_fields = field_count;
     return field_count;
 }
 

@@ -31,8 +31,8 @@ typedef struct {
     int needs_unescaping;
 } FieldDesc;
 
-// Core data structure
-typedef struct DSVViewer {
+// A component to hold file and parsing related data.
+typedef struct {
     char *data;
     size_t length;
     int fd;
@@ -42,7 +42,10 @@ typedef struct DSVViewer {
     size_t *line_offsets;
     size_t num_lines;
     size_t capacity;
-    
+} FileAndParseData;
+
+// Core data structure
+typedef struct DSVViewer {
     // Pointers to modularized components.
     struct DisplayCache *display_cache;
     struct CacheMemoryPool *mem_pool;
@@ -50,7 +53,8 @@ typedef struct DSVViewer {
     
     // New component pointer for our incremental refactor
     DisplayState *display_state;
-    
+    FileAndParseData *file_data;
+
     // Threading
     int num_threads;
 } DSVViewer;
