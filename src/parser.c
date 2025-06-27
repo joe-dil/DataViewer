@@ -5,6 +5,14 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <sys/time.h>
+
+// Simple timing utility for profiling
+static double get_time_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
+}
 
 // --- Static Helper Declarations ---
 static char detect_delimiter(const char *data, size_t length);
@@ -49,20 +57,21 @@ static void unload_file(struct DSVViewer *viewer) {
 static size_t estimate_line_count(DSVViewer *viewer) {
     const size_t sample_size = (viewer->length < 65536) ? viewer->length : 65536;
     if (sample_size == 0) return 1;
+    
+    // Count newlines in sample using memchr (much faster than byte-by-byte)
     int sample_lines = 0;
-    size_t bytes_in_sample = 0;
-    char *p = (char*)viewer->data, *end = p + sample_size;
-    int in_quotes = 0;
-    while (p < end && sample_lines < 100) {
-        if (*p == '"') in_quotes = !in_quotes;
-        else if (*p == '\n' && !in_quotes) {
-            sample_lines++;
-            bytes_in_sample = (p - (char*)viewer->data);
-        }
-        p++;
+    const char *search_start = viewer->data;
+    const char *search_end = viewer->data + sample_size;
+    
+    while (search_start < search_end) {
+        const char *newline = memchr(search_start, '\n', search_end - search_start);
+        if (!newline) break;
+        sample_lines++;
+        search_start = newline + 1;
     }
+    
     if (sample_lines == 0) return (viewer->length / 80) + 1;
-    double avg_line_len = (double)bytes_in_sample / sample_lines;
+    double avg_line_len = (double)sample_size / sample_lines;
     return (size_t)((viewer->length / avg_line_len) * 1.2) + 1;
 }
 
@@ -71,18 +80,31 @@ static void scan_file(DSVViewer *viewer) {
     viewer->line_offsets = malloc(viewer->capacity * sizeof(size_t));
     viewer->num_lines = 0;
     viewer->line_offsets[viewer->num_lines++] = 0;
-    char *p = (char*)viewer->data, *end = p + viewer->length;
-    int in_quotes = 0;
-    for (char *current = p; current < end; current++) {
-        if (*current == '"') in_quotes = !in_quotes;
-        else if (*current == '\n' && !in_quotes) {
-            if (viewer->num_lines >= viewer->capacity) {
-                viewer->capacity *= 2;
-                viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
-            }
-            if (current + 1 < end) viewer->line_offsets[viewer->num_lines++] = (current - p) + 1;
+    
+    // Fast newline scanning using memchr for large chunks
+    const char *search_start = viewer->data;
+    const char *file_end = viewer->data + viewer->length;
+    
+    while (search_start < file_end) {
+        const char *newline = memchr(search_start, '\n', file_end - search_start);
+        if (!newline) break;
+        
+        // Check if we need to expand capacity
+        if (viewer->num_lines >= viewer->capacity) {
+            viewer->capacity *= 2;
+            viewer->line_offsets = realloc(viewer->line_offsets, viewer->capacity * sizeof(size_t));
         }
+        
+        // Store offset to character after newline
+        size_t next_line_offset = (newline - viewer->data) + 1;
+        if (next_line_offset < viewer->length) {
+            viewer->line_offsets[viewer->num_lines++] = next_line_offset;
+        }
+        
+        search_start = newline + 1;
     }
+    
+    // Trim capacity to actual size
     if (viewer->capacity > viewer->num_lines) {
         viewer->line_offsets = realloc(viewer->line_offsets, viewer->num_lines * sizeof(size_t));
     }
@@ -165,13 +187,49 @@ static void analyze_columns(struct DSVViewer *viewer) {
 
 // --- Main Initialization Orchestrator ---
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+    double start_time = get_time_ms();
+    double phase_time;
+    
+    // Phase 1: File loading
+    double load_start = get_time_ms();
     if (load_file(viewer, filename) != 0) return -1;
+    phase_time = get_time_ms() - load_start;
+    printf("File loading: %.2f ms\n", phase_time);
+    
+    // Phase 2: Delimiter detection
+    double delim_start = get_time_ms();
     viewer->delimiter = (delimiter == 0) ? detect_delimiter(viewer->data, viewer->length) : delimiter;
+    phase_time = get_time_ms() - delim_start;
+    printf("Delimiter detection: %.2f ms\n", phase_time);
+    
+    // Phase 3: Memory allocation
+    double alloc_start = get_time_ms();
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    phase_time = get_time_ms() - alloc_start;
+    printf("Field allocation: %.2f ms\n", phase_time);
+    
+    // Phase 4: File scanning
+    double scan_start = get_time_ms();
     scan_file(viewer);
+    phase_time = get_time_ms() - scan_start;
+    printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->num_lines);
+    
+    // Phase 5: Column analysis
+    double analysis_start = get_time_ms();
     analyze_columns(viewer);
+    phase_time = get_time_ms() - analysis_start;
+    printf("Column analysis: %.2f ms (using %d threads)\n", phase_time, viewer->num_threads);
+    
+    // Phase 6: Cache initialization
+    double cache_start = get_time_ms();
     if (viewer->num_lines > 500 || viewer->num_cols > 20) init_cache_system((struct DSVViewer*)viewer);
     else { viewer->mem_pool = NULL; viewer->display_cache = NULL; viewer->intern_table = NULL; }
+    phase_time = get_time_ms() - cache_start;
+    printf("Cache initialization: %.2f ms\n", phase_time);
+    
+    double total_time = get_time_ms() - start_time;
+    printf("Total initialization: %.2f ms\n", total_time);
+    
     return 0;
 }
 
