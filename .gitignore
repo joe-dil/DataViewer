@@ -1,0 +1,28 @@
+# Build artifacts
+obj/
+*.o
+*.a
+*.so
+*.dylib
+
+# Executable
+bin/viewer
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# macOS
+.DS_Store
+
+# Profiling/debugging
+*.out
+profile_output.txt
+gmon.out 
