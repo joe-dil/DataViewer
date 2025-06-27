@@ -59,7 +59,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         // Unified separator logic - same for both header and data
         if (col < num_fields - 1 && x + 3 <= cols) {
             if (!is_header || col_width == original_col_width) {
-                mvaddstr(y, x, separator);
+                mvaddstr(y, x, viewer->separator);
             }
         }
         x += 3;
@@ -79,7 +79,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     int display_rows = rows - 1;
     int screen_start_row = 0;
     
-    if (show_header) {
+    if (viewer->show_header) {
         attron(COLOR_PAIR(1) | A_UNDERLINE);
         draw_data_row(0, viewer, 0, start_col, 1); // 1 = is_header
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
@@ -87,7 +87,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     }
     
     for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
-        size_t file_line = start_row + screen_row - (show_header ? 0 : screen_start_row);
+        size_t file_line = start_row + screen_row - (viewer->show_header ? 0 : screen_start_row);
         if (file_line >= viewer->num_lines) break;
 
         draw_data_row(screen_row, viewer, file_line, start_col, 0); // 0 = not header

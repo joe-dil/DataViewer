@@ -1,10 +1,5 @@
 #include "viewer.h"
 
-// Global variable definitions
-int show_header = 1; // Default to showing header
-int supports_unicode = 0;
-const char* separator = " | "; // Default to ASCII
-
 int main(int argc, char *argv[]) {
     char delimiter = 0; // Default to auto-detect
     
@@ -19,14 +14,19 @@ int main(int argc, char *argv[]) {
 
     setlocale(LC_ALL, "");
 
+    DSVViewer viewer = {0};
+    
+    // Initialize display configuration
+    viewer.show_header = 1; // Default to showing header
+    viewer.supports_unicode = 0;
+    viewer.separator = ASCII_SEPARATOR;
+    
     // Check if the locale supports UTF-8 to enable unicode box characters
     char *locale = setlocale(LC_CTYPE, NULL);
     if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
-        supports_unicode = 1;
+        viewer.supports_unicode = 1;
+        viewer.separator = UNICODE_SEPARATOR;
     }
-    separator = supports_unicode ? " │ " : " | ";
-
-    DSVViewer viewer = {0};
     if (init_viewer(&viewer, argv[1], delimiter) != 0) {
         return 1;
     }

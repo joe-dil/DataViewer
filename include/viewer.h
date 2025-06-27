@@ -33,10 +33,9 @@ typedef struct {
     wchar_t wide_buffer[MAX_FIELD_LEN];
 } BufferPool;
 
-// Global variables
-extern int show_header;
-extern int supports_unicode;
-extern const char* separator;
+// Constants for default separator strings
+#define ASCII_SEPARATOR " | "
+#define UNICODE_SEPARATOR " │ "
 
 // Zero-copy field descriptor
 typedef struct {
@@ -70,6 +69,11 @@ typedef struct DSVViewer {
     
     // Threading
     int num_threads;
+    
+    // Display configuration (moved from globals)
+    int show_header;
+    int supports_unicode;
+    const char* separator;
 } DSVViewer;
 
 // Core application function declarations
