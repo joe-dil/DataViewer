@@ -196,11 +196,12 @@ void scan_file(DSVViewer *viewer) {
                 // Our estimate was too low. Fallback to doubling the capacity.
                 size_t new_capacity = viewer->capacity * 2;
                 if (new_capacity == 0) new_capacity = 8192;
-                viewer->line_offsets = realloc(viewer->line_offsets, new_capacity * sizeof(size_t));
-                if (!viewer->line_offsets) {
-                    perror("Failed to re-allocate line_offsets during scan");
-                    exit(1);
+                size_t *new_offsets = realloc(viewer->line_offsets, new_capacity * sizeof(size_t));
+                if (!new_offsets) {
+                    perror("Failed to expand line buffer; file may be truncated");
+                    break;
                 }
+                viewer->line_offsets = new_offsets;
                 viewer->capacity = new_capacity;
             }
             // Store the offset of the character *after* the newline.
@@ -217,7 +218,6 @@ void scan_file(DSVViewer *viewer) {
             viewer->line_offsets = trimmed_offsets;
             viewer->capacity = viewer->num_lines;
         }
-        // If realloc fails, we just keep the slightly larger buffer, which is fine.
     }
 }
 
