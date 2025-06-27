@@ -28,6 +28,7 @@ typedef struct {
     int *col_widths;
     size_t num_cols;
     BufferPool buffers;
+    int needs_redraw;
 } DisplayState;
 
 #endif // DISPLAY_STATE_H 
