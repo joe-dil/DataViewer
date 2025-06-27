@@ -100,7 +100,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     int display_rows = rows - 1;
     int screen_start_row = 0;
     
-    if (viewer->show_header) {
+    if (viewer->display_state->show_header) {
         attron(COLOR_PAIR(1) | A_UNDERLINE);
         draw_header_row(0, viewer, start_col);
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
@@ -108,7 +108,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     }
     
     for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
-        size_t file_line = start_row + screen_row - (viewer->show_header ? 0 : screen_start_row);
+        size_t file_line = start_row + screen_row - (viewer->display_state->show_header ? 0 : screen_start_row);
         if (file_line >= viewer->num_lines) break;
 
         draw_data_row(screen_row, viewer, file_line, start_col);

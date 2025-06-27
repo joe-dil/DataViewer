@@ -211,6 +211,14 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     if (analyze_columns(viewer) != 0) return -1;
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
+
+    // -- Initialize new DisplayState component --
+    viewer->display_state = malloc(sizeof(DisplayState));
+    if (!viewer->display_state) {
+        perror("Failed to allocate for DisplayState");
+        return -1;
+    }
+    viewer->display_state->show_header = 1;
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
@@ -239,6 +247,7 @@ static void cleanup_parser_resources(DSVViewer *viewer) {
 void cleanup_viewer(DSVViewer *viewer) {
     unload_file(viewer);
     cleanup_parser_resources(viewer);
+    free(viewer->display_state);
     cleanup_cache_system((struct DSVViewer*)viewer);
 }
 

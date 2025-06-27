@@ -19,6 +19,12 @@
 // These headers contain the necessary struct definitions and function prototypes.
 #include "cache.h"
 
+// NEW: A component to hold state related to the display and UI.
+// Defined here temporarily to avoid include issues during surgical refactor.
+typedef struct {
+    int show_header;
+} DisplayState;
+
 // General constants
 #define MAX_COLS 256
 #define MAX_FIELD_LEN 1024 // Now used by non-module code, so stays here.
@@ -62,16 +68,17 @@ typedef struct DSVViewer {
     BufferPool buffer_pool;
 
     // Pointers to modularized components.
-    // The struct definitions are in the included headers.
     struct DisplayCache *display_cache;
     struct CacheMemoryPool *mem_pool;
     struct StringInternTable *intern_table;
+    
+    // New component pointer for our incremental refactor
+    DisplayState *display_state;
     
     // Threading
     int num_threads;
     
     // Display configuration (moved from globals)
-    int show_header;
     int supports_unicode;
     const char* separator;
 } DSVViewer;
