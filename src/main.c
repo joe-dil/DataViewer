@@ -17,15 +17,7 @@ int main(int argc, char *argv[]) {
     DSVViewer viewer = {0};
     
     // The initial values for display are now set inside init_viewer.
-    char *locale = setlocale(LC_CTYPE, NULL);
-    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
-        viewer.supports_unicode = 1;
-        viewer.separator = UNICODE_SEPARATOR;
-    } else {
-        viewer.supports_unicode = 0;
-        viewer.separator = ASCII_SEPARATOR;
-    }
-
+    
     if (init_viewer(&viewer, argv[1], delimiter) != 0) {
         return 1;
     }

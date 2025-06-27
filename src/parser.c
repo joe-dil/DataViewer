@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <locale.h>
 
 // Constants to replace magic numbers
 #define DELIMITER_DETECTION_SAMPLE_SIZE 1024
@@ -219,6 +220,15 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
         return -1;
     }
     viewer->display_state->show_header = 1;
+    
+    char *locale = setlocale(LC_CTYPE, NULL);
+    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
+        viewer->display_state->supports_unicode = 1;
+        viewer->display_state->separator = UNICODE_SEPARATOR;
+    } else {
+        viewer->display_state->supports_unicode = 0;
+        viewer->display_state->separator = ASCII_SEPARATOR;
+    }
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();

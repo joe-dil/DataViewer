@@ -52,7 +52,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
         
         // Add separator if not truncated and not last column
         if (col < num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
-            mvaddstr(y, x, viewer->separator);
+            mvaddstr(y, x, viewer->display_state->separator);
         }
         x += 3;
         
@@ -85,7 +85,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         
         // Add separator if not last column and space available
         if (col < num_fields - 1 && x + 3 <= cols) {
-            mvaddstr(y, x, viewer->separator);
+            mvaddstr(y, x, viewer->display_state->separator);
         }
         x += 3;
     }

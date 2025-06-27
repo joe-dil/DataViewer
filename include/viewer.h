@@ -23,6 +23,8 @@
 // Defined here temporarily to avoid include issues during surgical refactor.
 typedef struct {
     int show_header;
+    int supports_unicode;
+    const char* separator;
 } DisplayState;
 
 // General constants
@@ -77,10 +79,6 @@ typedef struct DSVViewer {
     
     // Threading
     int num_threads;
-    
-    // Display configuration (moved from globals)
-    int supports_unicode;
-    const char* separator;
 } DSVViewer;
 
 // Core application function declarations
