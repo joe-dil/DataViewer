@@ -13,7 +13,7 @@ static void handle_input(int ch, DSVViewer *viewer, size_t *start_row, size_t *s
             if (*start_row > 0) (*start_row)--;
             break;
         case KEY_DOWN:
-            if (*start_row < viewer->file_data->num_lines - 1) (*start_row)++;
+            if (*start_row + 1 < viewer->file_data->num_lines) (*start_row)++;
             break;
         case KEY_LEFT:
             if (*start_col > 0) (*start_col)--;
@@ -30,14 +30,16 @@ static void handle_input(int ch, DSVViewer *viewer, size_t *start_row, size_t *s
             break;
         case KEY_NPAGE:
             *start_row += page_size;
-            if (*start_row >= viewer->file_data->num_lines) *start_row = viewer->file_data->num_lines - 1;
+            if (*start_row >= viewer->file_data->num_lines) {
+                *start_row = (viewer->file_data->num_lines > 0) ? viewer->file_data->num_lines - 1 : 0;
+            }
             break;
         case KEY_HOME:
             *start_row = 0;
             *start_col = 0;
             break;
         case KEY_END:
-            *start_row = viewer->file_data->num_lines - 1;
+            *start_row = (viewer->file_data->num_lines > 0) ? viewer->file_data->num_lines - 1 : 0;
             break;
     }
 }

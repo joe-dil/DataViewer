@@ -39,9 +39,6 @@ typedef struct DSVViewer {
     // New component pointer for our incremental refactor
     DisplayState *display_state;
     FileAndParseData *file_data;
-
-    // Threading
-    int num_threads;
 } DSVViewer;
 
 // Core application function declarations
