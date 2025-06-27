@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -O3 -march=native -flto -Iinclude
-LIBS = -lncurses
+LIBS = -lncurses -lpthread
 SRCDIR = src
 OBJDIR = obj
 BINDIR = bin

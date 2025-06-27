@@ -4,6 +4,18 @@
 #include "file_scanner.h"
 #include "column_analyzer.h"
 #include <wchar.h>
+#include <unistd.h> // For sysconf
+
+// SIMD includes for vectorized parsing
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
+
+// Forward declaration for the SIMD helper function
+static size_t simd_find_delimiter(const char *data, size_t length, char delimiter);
 
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     if (load_file(viewer, filename) != 0) {
@@ -23,6 +35,10 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     scan_file(viewer);
     init_buffer_pool((struct DSVViewer*)viewer);
     
+    // Determine the number of threads to use
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    viewer->num_threads = (num_cores > 0) ? (int)num_cores : 1;
+
     analyze_columns(viewer);
     
     // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
@@ -70,7 +86,27 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     size_t field_start = offset;
     int has_escapes = 0;
     
+    // Memory prefetching for better cache performance
+    const char *data_ptr = viewer->data + offset;
+    size_t remaining = viewer->length - offset;
+    if (remaining > 128) {
+        __builtin_prefetch(data_ptr + 64, 0, 1); // Prefetch next cache line
+        __builtin_prefetch(data_ptr + 128, 0, 1); // Prefetch another cache line
+    }
+    
     while (i < viewer->length && field_count < (size_t)max_fields) {
+        // --- SIMD Accelerated Search ---
+        // Only use SIMD when not inside quotes, as it simplifies the logic.
+        if (!in_quotes) {
+            size_t search_len = viewer->length - i;
+            size_t next_special_char = simd_find_delimiter(viewer->data + i, search_len, viewer->delimiter);
+            
+            // If SIMD found a special character, jump to it.
+            if (next_special_char > 0 && (i + next_special_char < viewer->length)) {
+                i += next_special_char;
+            }
+        }
+
         char c = viewer->data[i];
         
         if (c == '"') {
@@ -196,4 +232,54 @@ int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
         
         return display_width < 0 ? copy_len : display_width;
     }
+}
+
+// SIMD-optimized delimiter detection for long lines
+static size_t simd_find_delimiter(const char *data, size_t length, char delimiter) {
+#ifdef __AVX2__
+    if (length >= 32) {
+        __m256i delim_vec = _mm256_set1_epi8(delimiter);
+        __m256i quote_vec = _mm256_set1_epi8('"');
+        
+        for (size_t i = 0; i <= length - 32; i += 32) {
+            __m256i data_vec = _mm256_loadu_si256((__m256i*)(data + i));
+            __m256i delim_cmp = _mm256_cmpeq_epi8(data_vec, delim_vec);
+            __m256i quote_cmp = _mm256_cmpeq_epi8(data_vec, quote_vec);
+            
+            uint32_t delim_mask = _mm256_movemask_epi8(delim_cmp);
+            uint32_t quote_mask = _mm256_movemask_epi8(quote_cmp);
+            
+            if (delim_mask || quote_mask) {
+                // Found a character of interest, fall back to scalar processing from here
+                return i + __builtin_ctz(delim_mask | quote_mask);
+            }
+        }
+        return (length / 32) * 32; // Continue scalar processing from where SIMD left off
+    }
+#elif defined(__SSE2__)
+    if (length >= 16) {
+        __m128i delim_vec = _mm_set1_epi8(delimiter);
+        __m128i quote_vec = _mm_set1_epi8('"');
+        
+        for (size_t i = 0; i <= length - 16; i += 16) {
+            __m128i data_vec = _mm_loadu_si128((__m128i*)(data + i));
+            __m128i delim_cmp = _mm_cmpeq_epi8(data_vec, delim_vec);
+            __m128i quote_cmp = _mm_cmpeq_epi8(data_vec, quote_vec);
+            
+            uint16_t delim_mask = _mm_movemask_epi8(delim_cmp);
+            uint16_t quote_mask = _mm_movemask_epi8(quote_cmp);
+            
+            if (delim_mask || quote_mask) {
+                // Found a character of interest, fall back to scalar processing from here
+                return i + __builtin_ctz(delim_mask | quote_mask);
+            }
+        }
+        return (length / 16) * 16; // Continue scalar processing from where SIMD left off
+    }
+#endif
+    // Suppress unused parameter warnings for non-SIMD builds or short strings.
+    (void)data;
+    (void)length;
+    (void)delimiter;
+    return 0; // No SIMD available or data too short
 } 

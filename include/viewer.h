@@ -13,6 +13,7 @@
 #include <locale.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <pthread.h>
 
 // Include headers for modularized components
 // These headers contain the necessary struct definitions and function prototypes.
@@ -56,6 +57,9 @@ typedef struct DSVViewer {
     struct CacheMemoryPool *mem_pool;
     struct BufferPool *buffer_pool;
     struct StringInternTable *intern_table;
+    
+    // Threading
+    int num_threads;
 } DSVViewer;
 
 // Core application function declarations
