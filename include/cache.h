@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "memory_pool.h"
+#include "string_intern.h"
 
 // Forward declare to avoid circular dependency
 struct DSVViewer;
@@ -11,19 +12,6 @@ struct DSVViewer;
 // Cache for display widths and truncated strings
 #define CACHE_SIZE 16384 // Power of 2 for efficient modulo
 #define MAX_TRUNCATED_VERSIONS 8
-
-#define INTERN_TABLE_SIZE 4096
-
-// A single entry in the string intern table's hash map
-typedef struct StringInternEntry {
-    char *str;
-    struct StringInternEntry *next;
-} StringInternEntry;
-
-// A hash-table-based string interning table to store each unique string only once.
-typedef struct StringInternTable {
-    StringInternEntry *buckets[INTERN_TABLE_SIZE];
-} StringInternTable;
 
 // A single cached truncated string
 typedef struct TruncatedString {
@@ -47,10 +35,9 @@ typedef struct DisplayCache {
 } DisplayCache;
 
 // Function declarations for the cache subsystem
-void init_string_intern_table(struct DSVViewer *viewer);
-void cleanup_string_intern_table(struct DSVViewer *viewer);
 void init_display_cache(struct DSVViewer *viewer);
 void cleanup_display_cache(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
+uint32_t fnv1a_hash(const char *str);
 
 #endif // CACHE_H 
