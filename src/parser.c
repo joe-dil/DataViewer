@@ -2,6 +2,7 @@
 #include "delimiter.h"
 #include "file_handler.h"
 #include "file_scanner.h"
+#include "column_analyzer.h"
 #include <wchar.h>
 
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
@@ -22,35 +23,7 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     scan_file(viewer);
     init_buffer_pool((struct DSVViewer*)viewer);
     
-    // Single-pass column detection and width calculation (first 1000 lines)
-    viewer->num_cols = 0;
-    size_t sample_size = (viewer->num_lines < 1000) ? viewer->num_lines : 1000;
-    
-    // Temporary width tracking
-    int temp_widths[MAX_COLS];
-    for (int i = 0; i < MAX_COLS; i++) {
-        temp_widths[i] = 8; // Default width
-    }
-    
-    // Single pass through sample lines
-    for (size_t i = 0; i < sample_size; i++) {
-        size_t num_fields = parse_line(viewer, viewer->line_offsets[i], 
-                                  viewer->fields, MAX_COLS);
-        
-        // Track max columns
-        if (num_fields > viewer->num_cols) {
-            viewer->num_cols = num_fields;
-        }
-        
-        // Track column widths using zero-copy field width calculation
-        for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
-            int display_width = calculate_field_display_width(viewer, &viewer->fields[col]);
-            
-            if (display_width > temp_widths[col]) {
-                temp_widths[col] = display_width;
-            }
-        }
-    }
+    analyze_columns(viewer);
     
     // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
     // For small files, this saves a significant amount of memory (~4MB).
@@ -62,13 +35,6 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
         viewer->mem_pool = NULL;
         viewer->display_cache = NULL;
         viewer->intern_table = NULL;
-    }
-
-    // Copy calculated widths with a cap of 16
-    viewer->col_widths = malloc(viewer->num_cols * sizeof(int));
-    for (size_t i = 0; i < viewer->num_cols; i++) {
-        viewer->col_widths[i] = temp_widths[i] > 16 ? 16 :  // Cap at 16 chars max
-                               (temp_widths[i] < 4 ? 4 : temp_widths[i]);  // Min 4 chars
     }
     
     return 0;
