@@ -14,106 +14,51 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Constants
+// Include headers for modularized components
+// These headers contain the necessary struct definitions and function prototypes.
+#include "utils.h"
+#include "cache.h"
+
+// General constants
 #define MAX_COLS 256
-#define MAX_FIELD_LEN 1024
+#define MAX_FIELD_LEN 1024 // Now used by non-module code, so stays here.
 #define BUFFER_SIZE 8192
-
-// Cache for display widths and truncated strings
-#define CACHE_SIZE 16384 // Power of 2 for efficient modulo
-#define MAX_TRUNCATED_VERSIONS 8
-
-// Memory Pool definitions for the display cache
-#define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
-#define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)   // Pool for cache entries, allows for collisions
-
-// Reusable buffers to avoid repeated stack allocation in hot loops
-typedef struct {
-    char buffer1[MAX_FIELD_LEN];
-    char buffer2[MAX_FIELD_LEN];
-    char buffer3[MAX_FIELD_LEN];
-    wchar_t wide_buffer[MAX_FIELD_LEN];
-} BufferPool;
-
-// A simple string interning table to store each unique string only once.
-typedef struct {
-    char** strings;
-    int capacity;
-    int used;
-} StringInternTable;
 
 // Global variables
 extern int show_header;
 extern int supports_unicode;
 extern const char* separator;
 
-typedef struct {
-    int width;
-    char *str;
-} TruncatedString;
-
-typedef struct DisplayCacheEntry {
-    uint32_t hash; // FNV-1a hash of the field content
-    int display_width;
-    TruncatedString truncated[MAX_TRUNCATED_VERSIONS];
-    int truncated_count;
-    char *original_string; // Store original string to resolve hash collisions
-    struct DisplayCacheEntry *next; // For chaining in case of collision
-} DisplayCacheEntry;
-
-typedef struct {
-    DisplayCacheEntry *entries[CACHE_SIZE];
-} DisplayCache;
-
-// Manages pre-allocated memory for the display cache to reduce malloc calls
-typedef struct {
-    // Pool for DisplayCacheEntry structs
-    DisplayCacheEntry* entry_pool;
-    int entry_pool_used;
-
-    // Pool for strings (original and truncated)
-    char* string_pool;
-    size_t string_pool_used;
-} CacheMemoryPool;
-
 // Zero-copy field descriptor
 typedef struct {
-    const char *start;  // Pointer into mmap'd data
-    size_t length;      // Length of field (may include quotes/escapes)
-    int needs_unescaping; // Whether field contains escaped quotes
+    const char *start;
+    size_t length;
+    int needs_unescaping;
 } FieldDesc;
 
 // Core data structure
-typedef struct {
+typedef struct CSVViewer {
     char *data;
     size_t length;
     int fd;
     char delimiter;
-    FieldDesc *fields;  // Zero-copy field descriptors
+    FieldDesc *fields;
     int num_fields;
     size_t *line_offsets;
     int num_lines;
     int capacity;
     int *col_widths;
     int num_cols;
-    DisplayCache *display_cache;
-    CacheMemoryPool *mem_pool;
-    BufferPool *buffer_pool;
-    StringInternTable *intern_table;
+    
+    // Pointers to modularized components.
+    // The struct definitions are in the included headers.
+    struct DisplayCache *display_cache;
+    struct CacheMemoryPool *mem_pool;
+    struct BufferPool *buffer_pool;
+    struct StringInternTable *intern_table;
 } CSVViewer;
 
-// Function declarations
-
-// Cache, Pool, and Interning functions
-void init_cache_memory_pool(CSVViewer *viewer);
-void cleanup_cache_memory_pool(CSVViewer *viewer);
-void init_buffer_pool(CSVViewer *viewer);
-void cleanup_buffer_pool(CSVViewer *viewer);
-void init_string_intern_table(CSVViewer *viewer);
-void cleanup_string_intern_table(CSVViewer *viewer);
-void init_display_cache(CSVViewer *viewer);
-void cleanup_display_cache(CSVViewer *viewer);
-const char* get_truncated_string(CSVViewer *viewer, const char* original, int width);
+// Core application function declarations
 
 // CSV Parser functions (csv_parser.c)
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter);

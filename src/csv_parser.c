@@ -1,91 +1,6 @@
 #include "viewer.h"
 #include <wchar.h>
 
-void init_cache_memory_pool(CSVViewer *viewer) {
-    viewer->mem_pool = malloc(sizeof(CacheMemoryPool));
-    if (!viewer->mem_pool) {
-        viewer->display_cache = NULL; // Prevent use
-        return;
-    }
-
-    viewer->mem_pool->entry_pool = malloc(sizeof(DisplayCacheEntry) * CACHE_ENTRY_POOL_SIZE);
-    viewer->mem_pool->entry_pool_used = 0;
-
-    viewer->mem_pool->string_pool = malloc(CACHE_STRING_POOL_SIZE);
-    viewer->mem_pool->string_pool_used = 0;
-
-    // If any pool allocation fails, disable the cache entirely
-    if (!viewer->mem_pool->entry_pool || !viewer->mem_pool->string_pool) {
-        free(viewer->mem_pool->entry_pool);
-        free(viewer->mem_pool->string_pool);
-        free(viewer->mem_pool);
-        viewer->mem_pool = NULL;
-        viewer->display_cache = NULL;
-    }
-}
-
-void cleanup_cache_memory_pool(CSVViewer *viewer) {
-    if (!viewer->mem_pool) return;
-    free(viewer->mem_pool->entry_pool);
-    free(viewer->mem_pool->string_pool);
-    free(viewer->mem_pool);
-}
-
-void init_buffer_pool(CSVViewer *viewer) {
-    viewer->buffer_pool = malloc(sizeof(BufferPool));
-    if (!viewer->buffer_pool) {
-        // This is a critical failure, maybe exit or handle error appropriately
-        perror("Failed to allocate buffer pool");
-        exit(1);
-    }
-}
-
-void cleanup_buffer_pool(CSVViewer *viewer) {
-    if (viewer->buffer_pool) {
-        free(viewer->buffer_pool);
-    }
-}
-
-void init_string_intern_table(CSVViewer *viewer) {
-    viewer->intern_table = malloc(sizeof(StringInternTable));
-    if (!viewer->intern_table) {
-        perror("Failed to allocate string intern table");
-        exit(1);
-    }
-    viewer->intern_table->capacity = 1024; // Initial capacity
-    viewer->intern_table->used = 0;
-    viewer->intern_table->strings = malloc(sizeof(char*) * viewer->intern_table->capacity);
-    if (!viewer->intern_table->strings) {
-        perror("Failed to allocate strings for intern table");
-        exit(1);
-    }
-}
-
-void cleanup_string_intern_table(CSVViewer *viewer) {
-    if (!viewer->intern_table) return;
-
-    // Free all the interned strings
-    for (int i = 0; i < viewer->intern_table->used; i++) {
-        free(viewer->intern_table->strings[i]);
-    }
-    free(viewer->intern_table->strings);
-    free(viewer->intern_table);
-}
-
-void init_display_cache(CSVViewer *viewer) {
-    viewer->display_cache = malloc(sizeof(DisplayCache));
-    if (viewer->display_cache) {
-        for (int i = 0; i < CACHE_SIZE; i++) {
-            viewer->display_cache->entries[i] = NULL;
-        }
-    }
-}
-
-void cleanup_display_cache(CSVViewer *viewer) {
-    if (!viewer->display_cache) return;
-    free(viewer->display_cache);
-}
-
 int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     struct stat st;
     
@@ -121,7 +36,7 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     viewer->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     
     scan_file(viewer);
-    init_buffer_pool(viewer);
+    init_buffer_pool((struct CSVViewer*)viewer);
     
     // Single-pass column detection and width calculation (first 1000 lines)
     viewer->num_cols = 0;
@@ -156,9 +71,9 @@ int init_viewer(CSVViewer *viewer, const char *filename, char delimiter) {
     // Lazy Allocation: Only initialize the display cache and its memory pool for larger files.
     // For small files, this saves a significant amount of memory (~4MB).
     if (viewer->num_lines > 500 || viewer->num_cols > 20) {
-        init_cache_memory_pool(viewer);
-        init_display_cache(viewer);
-        init_string_intern_table(viewer);
+        init_cache_memory_pool((struct CSVViewer*)viewer);
+        init_display_cache((struct CSVViewer*)viewer);
+        init_string_intern_table((struct CSVViewer*)viewer);
     } else {
         viewer->mem_pool = NULL;
         viewer->display_cache = NULL;
@@ -191,10 +106,10 @@ void cleanup_viewer(CSVViewer *viewer) {
     if (viewer->col_widths) {
         free(viewer->col_widths);
     }
-    cleanup_display_cache(viewer);
-    cleanup_cache_memory_pool(viewer);
-    cleanup_buffer_pool(viewer);
-    cleanup_string_intern_table(viewer);
+    cleanup_display_cache((struct CSVViewer*)viewer);
+    cleanup_cache_memory_pool((struct CSVViewer*)viewer);
+    cleanup_buffer_pool((struct CSVViewer*)viewer);
+    cleanup_string_intern_table((struct CSVViewer*)viewer);
 }
 
 char detect_delimiter(const char *data, size_t length) {
