@@ -178,27 +178,30 @@ static int analyze_columns(struct DSVViewer *viewer) {
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double start_time = get_time_ms();
     double phase_time;
+    int ret = -1; // Default to failure
+
+    // Ensure all pointers are NULL so cleanup is safe
+    memset(viewer, 0, sizeof(DSVViewer));
     
     // -- Initialize new DisplayState component --
-    // Do this first, so it's available to other init functions.
     viewer->display_state = malloc(sizeof(DisplayState));
     if (!viewer->display_state) {
         perror("Failed to allocate for DisplayState");
-        return -1;
+        goto cleanup;
     }
+    memset(viewer->display_state, 0, sizeof(DisplayState));
     
     // -- Initialize new FileAndParseData component --
     viewer->file_data = malloc(sizeof(FileAndParseData));
     if (!viewer->file_data) {
         perror("Failed to allocate for FileAndParseData");
-        // We must clean up the previously allocated DisplayState
-        free(viewer->display_state);
-        return -1;
+        goto cleanup;
     }
+    memset(viewer->file_data, 0, sizeof(FileAndParseData));
     
     // Phase 1: File loading
     double load_start = get_time_ms();
-    if (load_file(viewer, filename) != 0) return -1;
+    if (load_file(viewer, filename) != 0) goto cleanup;
     phase_time = get_time_ms() - load_start;
     printf("File loading: %.2f ms\n", phase_time);
     
@@ -213,20 +216,20 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     if (!viewer->file_data->fields) {
         fprintf(stderr, "Failed to allocate memory for field descriptors\n");
-        return -1;
+        goto cleanup;
     }
     phase_time = get_time_ms() - alloc_start;
     printf("Field allocation: %.2f ms\n", phase_time);
     
     // Phase 4: File scanning
     double scan_start = get_time_ms();
-    if (scan_file(viewer) != 0) return -1;
+    if (scan_file(viewer) != 0) goto cleanup;
     phase_time = get_time_ms() - scan_start;
     printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->file_data->num_lines);
     
     // Phase 5: Column analysis
     double analysis_start = get_time_ms();
-    if (analyze_columns(viewer) != 0) return -1;
+    if (analyze_columns(viewer) != 0) goto cleanup;
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
@@ -246,11 +249,8 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
     if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
+        // Note: init_cache_system does not have robust error handling yet.
         init_cache_system((struct DSVViewer*)viewer);
-    } else { 
-        viewer->mem_pool = NULL; 
-        viewer->display_cache = NULL; 
-        viewer->intern_table = NULL; 
     }
     phase_time = get_time_ms() - cache_start;
     printf("Cache initialization: %.2f ms\n", phase_time);
@@ -258,30 +258,38 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     double total_time = get_time_ms() - start_time;
     printf("Total initialization: %.2f ms\n", total_time);
     
-    return 0;
+    ret = 0; // Success
+
+cleanup:
+    if (ret != 0) {
+        // If we failed, clean up everything.
+        // On success, cleanup happens later in main().
+        cleanup_viewer(viewer);
+    }
+    return ret;
 }
 
 static void cleanup_file_and_parse_data_resources(DSVViewer *viewer) {
-    if (viewer->file_data) {
-        if (viewer->file_data->fields) free(viewer->file_data->fields);
-        if (viewer->file_data->line_offsets) free(viewer->file_data->line_offsets);
-    }
+    if (!viewer->file_data) return;
+    
+    if (viewer->file_data->fields) free(viewer->file_data->fields);
+    if (viewer->file_data->line_offsets) free(viewer->file_data->line_offsets);
+    
+    // The main struct pointer is freed in the main cleanup function
 }
 
 void cleanup_viewer(DSVViewer *viewer) {
+    if (!viewer) return;
+
     unload_file(viewer);
     cleanup_cache_system((struct DSVViewer*)viewer);
     cleanup_file_and_parse_data_resources(viewer);
 
-    // The DisplayState component should be freed last, after all other
-    // systems that might have used its data are cleaned up.
     if (viewer->display_state) {
-        // This is the sole owner of the col_widths pointer.
-        free(viewer->display_state->col_widths);
+        if (viewer->display_state->col_widths) free(viewer->display_state->col_widths);
         free(viewer->display_state);
     }
 
-    // Free the FileAndParseData component
     if (viewer->file_data) {
         free(viewer->file_data);
     }
