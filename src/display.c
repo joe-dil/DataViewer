@@ -2,8 +2,8 @@
 #include <wchar.h>
 #include <string.h>
 
-// Unified function to draw any CSV line (header or data)
-static void draw_csv_line(int y, DSVViewer *viewer, int file_line, int start_col, int is_header) {
+// Unified function to draw any data row (header or data)
+static void draw_data_row(int y, DSVViewer *viewer, int file_line, int start_col, int is_header) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
@@ -81,7 +81,7 @@ void display_data(DSVViewer *viewer, int start_row, int start_col) {
     
     if (show_header) {
         attron(COLOR_PAIR(1) | A_UNDERLINE);
-        draw_csv_line(0, viewer, 0, start_col, 1); // 1 = is_header
+        draw_data_row(0, viewer, 0, start_col, 1); // 1 = is_header
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
         screen_start_row = 1;
     }
@@ -90,7 +90,7 @@ void display_data(DSVViewer *viewer, int start_row, int start_col) {
         int file_line = start_row + screen_row - (show_header ? 0 : screen_start_row);
         if (file_line >= viewer->num_lines) break;
 
-        draw_csv_line(screen_row, viewer, file_line, start_col, 0); // 0 = not header
+        draw_data_row(screen_row, viewer, file_line, start_col, 0); // 0 = not header
     }
     
     mvprintw(rows - 1, 0, "Lines %d-%d of %d | Row: %d | Col: %d | q: quit | h: help",
@@ -103,7 +103,7 @@ void display_data(DSVViewer *viewer, int start_row, int start_col) {
 
 void show_help(void) {
     clear();
-    mvprintw(1, 2, "CSV/PSV Viewer - Help");
+    mvprintw(1, 2, "DSV (Delimiter-Separated Values) Viewer - Help");
     mvprintw(3, 2, "Navigation:");
     mvprintw(4, 4, "Arrow Keys    - Jump between fields/scroll");
     mvprintw(5, 4, "Page Up/Down  - Scroll pages");

@@ -48,12 +48,11 @@ debug: $(TARGET)
 
 # Help target
 help:
-	@echo "Available targets:"
-	@echo "  $(TARGET)     - Build the CSV viewer (default)"
-	@echo "  clean         - Remove build artifacts"
-	@echo "  test          - Build and test with sample data"
-	@echo "  debug         - Build with debug symbols"
-	@echo "  install-deps  - Install ncurses development libraries"
-	@echo "  help          - Show this help message"
+	@echo "Usage: make [target]"
+	@echo "Targets:"
+	@echo "  all        - Build the DSV viewer (default)"
+	@echo "  clean      - Remove build artifacts"
+	@echo "  test       - Build and run a test"
+	@echo "  help       - Show this help message"
 
 .PHONY: clean test install-deps debug help 
