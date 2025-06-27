@@ -2,38 +2,33 @@
 #include <wchar.h>
 #include <string.h>
 
-// Unified function to draw any data row (header or data)
-static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, int is_header) {
+// Draw header row with special formatting and padding
+static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
     
-    int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
-    
-    if (is_header) {
-        // More efficient header space filling - use a single call
-        move(y, 0);
-        for (int i = 0; i < cols; i++) {
-            addch(' ');
-        }
+    // Clear the entire header line
+    move(y, 0);
+    for (int i = 0; i < cols; i++) {
+        addch(' ');
     }
     
-    // Use the unified logic for both header and data
+    int x = 0;
+    size_t num_fields = parse_line(viewer, viewer->line_offsets[0], viewer->fields, MAX_COLS);
+    
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
         int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
         int original_col_width = col_width;
         
-        if (is_header) {
-            // Header truncation logic
-            int separator_space = (col < num_fields - 1) ? 3 : 0;
-            int needed_space = col_width + separator_space;
-            if (x + needed_space > cols) {
-                col_width = cols - x;
-                if (col_width <= 0) break;
-            }
+        // Header truncation logic
+        int separator_space = (col < num_fields - 1) ? 3 : 0;
+        int needed_space = col_width + separator_space;
+        if (x + needed_space > cols) {
+            col_width = cols - x;
+            if (col_width <= 0) break;
         }
         
         char *rendered_field = viewer->buffer_pool.buffer_one;
@@ -41,12 +36,11 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         
-        if (is_header && col_width < original_col_width) {
+        if (col_width < original_col_width) {
             // Pad truncated header fields with spaces
             int text_len = strlen(display_string);
             char *padded_field = viewer->buffer_pool.buffer_two;
             strcpy(padded_field, display_string);
-            // More efficient padding using memset
             memset(padded_field + text_len, ' ', col_width - text_len);
             padded_field[col_width] = '\0';
             mvaddstr(y, x, padded_field);
@@ -56,17 +50,44 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
 
         x += col_width;
         
-        // Unified separator logic - same for both header and data
-        if (col < num_fields - 1 && x + 3 <= cols) {
-            if (!is_header || col_width == original_col_width) {
-                mvaddstr(y, x, viewer->separator);
-            }
+        // Add separator if not truncated and not last column
+        if (col < num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+            mvaddstr(y, x, viewer->separator);
         }
         x += 3;
         
-        if (is_header && col_width != original_col_width && x >= cols) {
+        if (col_width != original_col_width && x >= cols) {
             break;
         }
+    }
+}
+
+// Draw regular data row
+static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col) {
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    (void)rows; // Suppress unused warning
+    
+    int x = 0;
+    size_t num_fields = parse_line(viewer, viewer->line_offsets[file_line], viewer->fields, MAX_COLS);
+    
+    for (size_t col = start_col; col < num_fields; col++) {
+        if (x >= cols) break;
+        
+        int col_width = (col < viewer->num_cols) ? viewer->col_widths[col] : 12;
+        
+        char *rendered_field = viewer->buffer_pool.buffer_one;
+        render_field(&viewer->fields[col], rendered_field, MAX_FIELD_LEN);
+        
+        const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
+        mvaddstr(y, x, display_string);
+        x += col_width;
+        
+        // Add separator if not last column and space available
+        if (col < num_fields - 1 && x + 3 <= cols) {
+            mvaddstr(y, x, viewer->separator);
+        }
+        x += 3;
     }
 }
 
@@ -81,7 +102,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     
     if (viewer->show_header) {
         attron(COLOR_PAIR(1) | A_UNDERLINE);
-        draw_data_row(0, viewer, 0, start_col, 1); // 1 = is_header
+        draw_header_row(0, viewer, start_col);
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
         screen_start_row = 1;
     }
@@ -90,7 +111,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
         size_t file_line = start_row + screen_row - (viewer->show_header ? 0 : screen_start_row);
         if (file_line >= viewer->num_lines) break;
 
-        draw_data_row(screen_row, viewer, file_line, start_col, 0); // 0 = not header
+        draw_data_row(screen_row, viewer, file_line, start_col);
     }
     
     // Use %zu for size_t types
