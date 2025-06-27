@@ -23,6 +23,10 @@
 #define CACHE_SIZE 16384 // Power of 2 for efficient modulo
 #define MAX_TRUNCATED_VERSIONS 8
 
+// Memory Pool definitions for the display cache
+#define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
+#define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)   // Pool for cache entries, allows for collisions
+
 // Global variables
 extern int show_header;
 extern int supports_unicode;
@@ -46,6 +50,17 @@ typedef struct {
     DisplayCacheEntry *entries[CACHE_SIZE];
 } DisplayCache;
 
+// Manages pre-allocated memory for the display cache to reduce malloc calls
+typedef struct {
+    // Pool for DisplayCacheEntry structs
+    DisplayCacheEntry* entry_pool;
+    int entry_pool_used;
+
+    // Pool for strings (original and truncated)
+    char* string_pool;
+    size_t string_pool_used;
+} CacheMemoryPool;
+
 // Zero-copy field descriptor
 typedef struct {
     const char *start;  // Pointer into mmap'd data
@@ -68,11 +83,14 @@ typedef struct {
     int num_cols;
     char *render_buffer;  // Single buffer for rendering fields when needed
     DisplayCache *display_cache;
+    CacheMemoryPool *mem_pool;
 } CSVViewer;
 
 // Function declarations
 
-// Cache functions
+// Cache and Memory Pool functions
+void init_cache_memory_pool(CSVViewer *viewer);
+void cleanup_cache_memory_pool(CSVViewer *viewer);
 void init_display_cache(CSVViewer *viewer);
 void cleanup_display_cache(CSVViewer *viewer);
 const char* get_truncated_string(CSVViewer *viewer, const char* original, int width);

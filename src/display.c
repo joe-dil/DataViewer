@@ -20,6 +20,32 @@ static int calculate_display_width(const char* str) {
     return (width < 0) ? strlen(str) : width;
 }
 
+// Helper to allocate a DisplayCacheEntry from the memory pool
+static DisplayCacheEntry* pool_alloc_entry(CSVViewer *viewer) {
+    if (!viewer->mem_pool || !viewer->mem_pool->entry_pool) return NULL;
+
+    if (viewer->mem_pool->entry_pool_used >= CACHE_ENTRY_POOL_SIZE) {
+        return NULL; // Pool is full
+    }
+    return &viewer->mem_pool->entry_pool[viewer->mem_pool->entry_pool_used++];
+}
+
+// Helper to copy a string into the string memory pool (replaces strdup)
+static char* pool_strdup(CSVViewer *viewer, const char* str) {
+    if (!viewer->mem_pool || !viewer->mem_pool->string_pool) return NULL;
+    
+    size_t len = strlen(str) + 1;
+    if (viewer->mem_pool->string_pool_used + len > CACHE_STRING_POOL_SIZE) {
+        return NULL; // Pool is full
+    }
+
+    char* dest = viewer->mem_pool->string_pool + viewer->mem_pool->string_pool_used;
+    memcpy(dest, str, len);
+    viewer->mem_pool->string_pool_used += len;
+
+    return dest;
+}
+
 // Truncates a string using wide characters to respect display width
 static void truncate_str(const char* src, char* dest, int width) {
     wchar_t wcs[MAX_FIELD_LEN];
@@ -74,7 +100,14 @@ const char* get_truncated_string(CSVViewer *viewer, const char* original, int wi
         if (entry->truncated_count < MAX_TRUNCATED_VERSIONS) {
             int i = entry->truncated_count++;
             entry->truncated[i].width = width;
-            entry->truncated[i].str = strdup(truncated_buffer);
+            char* pooled_str = pool_strdup(viewer, truncated_buffer);
+            if (!pooled_str) { // Pool is full, return non-pooled buffer
+                entry->truncated_count--;
+                strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+                static_buffer[MAX_FIELD_LEN - 1] = '\0';
+                return static_buffer;
+            }
+            entry->truncated[i].str = pooled_str;
             return entry->truncated[i].str;
         }
         // Fallback: cannot store more versions. Copy to static buffer and return.
@@ -82,13 +115,29 @@ const char* get_truncated_string(CSVViewer *viewer, const char* original, int wi
         static_buffer[MAX_FIELD_LEN - 1] = '\0';
         return static_buffer;
     } else { // No entry for this string, create a new one
-        DisplayCacheEntry *new_entry = malloc(sizeof(DisplayCacheEntry));
+        DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
+        if (!new_entry) { // Entry pool is full
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
+            return static_buffer;
+        }
+
         new_entry->hash = hash;
-        new_entry->original_string = strdup(original);
+        new_entry->original_string = pool_strdup(viewer, original);
         new_entry->display_width = calculate_display_width(original);
         new_entry->truncated_count = 1;
         new_entry->truncated[0].width = width;
-        new_entry->truncated[0].str = strdup(truncated_buffer);
+        new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
+        
+        // If any string allocation failed, the entry is effectively invalid.
+        if (!new_entry->original_string || !new_entry->truncated[0].str) {
+            // This is tricky because we can't easily "undo" the pool allocations.
+            // For simplicity, we just won't add it to the cache.
+            // The viewer will simply have a cache miss next time.
+            strncpy(static_buffer, truncated_buffer, MAX_FIELD_LEN - 1);
+            static_buffer[MAX_FIELD_LEN - 1] = '\0';
+            return static_buffer;
+        }
         
         // Add to hash table (handle collision)
         new_entry->next = viewer->display_cache->entries[index];
