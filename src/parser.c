@@ -1,18 +1,11 @@
 #include "viewer.h"
 #include "display_state.h"
+#include "file_io.h"
 #include <wchar.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/mman.h>
 #include <pthread.h>
 #include <sys/time.h>
 
 // Constants to replace magic numbers
-#define DELIMITER_DETECTION_SAMPLE_SIZE 1024
-#define LINE_ESTIMATION_SAMPLE_SIZE 65536
-#define LINE_CAPACITY_GROWTH_FACTOR 1.2
-#define DEFAULT_CHARS_PER_LINE 80
 #define COLUMN_ANALYSIS_SAMPLE_LINES 1000
 #define MAX_COLUMN_WIDTH 16
 #define MIN_COLUMN_WIDTH 4
@@ -27,116 +20,8 @@ static double get_time_ms(void) {
 }
 
 // --- Static Helper Declarations ---
-static char detect_delimiter(const char *data, size_t length);
-static int load_file(struct DSVViewer *viewer, const char *filename);
-static void unload_file(struct DSVViewer *viewer);
-static int scan_file(DSVViewer *viewer);
 static int analyze_columns(struct DSVViewer *viewer);
 
-
-// --- Delimiter Detection ---
-static char detect_delimiter(const char *data, size_t length) {
-    int comma_count = 0, tab_count = 0, pipe_count = 0;
-    size_t scan_len = (length < DELIMITER_DETECTION_SAMPLE_SIZE) ? length : DELIMITER_DETECTION_SAMPLE_SIZE;
-    for (size_t i = 0; i < scan_len; i++) {
-        if (data[i] == ',') comma_count++;
-        else if (data[i] == '\t') tab_count++;
-        else if (data[i] == '|') pipe_count++;
-    }
-    if (tab_count > comma_count && tab_count > pipe_count) return '\t';
-    if (pipe_count > comma_count && pipe_count > tab_count) return '|';
-    return ',';
-}
-
-// --- File Handling ---
-static int load_file(struct DSVViewer *viewer, const char *filename) {
-    struct stat st;
-    viewer->file_data->fd = open(filename, O_RDONLY);
-    if (viewer->file_data->fd == -1) { perror("Failed to open file"); return -1; }
-    if (fstat(viewer->file_data->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->file_data->fd); return -1; }
-    viewer->file_data->length = st.st_size;
-    viewer->file_data->data = mmap(NULL, viewer->file_data->length, PROT_READ, MAP_PRIVATE, viewer->file_data->fd, 0);
-    if (viewer->file_data->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->file_data->fd); return -1; }
-    return 0;
-}
-
-static void unload_file(struct DSVViewer *viewer) {
-    if (viewer->file_data->data != MAP_FAILED) munmap(viewer->file_data->data, viewer->file_data->length);
-    if (viewer->file_data->fd != -1) close(viewer->file_data->fd);
-}
-
-// --- File Scanning ---
-static size_t estimate_line_count(DSVViewer *viewer) {
-    const size_t sample_size = (viewer->file_data->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->file_data->length : LINE_ESTIMATION_SAMPLE_SIZE;
-    if (sample_size == 0) return 1;
-    
-    // Count newlines in sample using memchr (much faster than byte-by-byte)
-    int sample_lines = 0;
-    const char *search_start = viewer->file_data->data;
-    const char *search_end = viewer->file_data->data + sample_size;
-    
-    while (search_start < search_end) {
-        const char *newline = memchr(search_start, '\n', search_end - search_start);
-        if (!newline) break;
-        sample_lines++;
-        search_start = newline + 1;
-    }
-    
-    if (sample_lines == 0) return (viewer->file_data->length / DEFAULT_CHARS_PER_LINE) + 1;
-    double avg_line_len = (double)sample_size / sample_lines;
-    return (size_t)((viewer->file_data->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
-}
-
-static int scan_file(DSVViewer *viewer) {
-    viewer->file_data->capacity = estimate_line_count(viewer);
-    viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
-    if (!viewer->file_data->line_offsets) {
-        fprintf(stderr, "Failed to allocate memory for line offsets\n");
-        return -1;
-    }
-    
-    viewer->file_data->num_lines = 0;
-    viewer->file_data->line_offsets[viewer->file_data->num_lines++] = 0;
-    
-    // Fast newline scanning using memchr for large chunks
-    const char *search_start = viewer->file_data->data;
-    const char *file_end = viewer->file_data->data + viewer->file_data->length;
-    
-    while (search_start < file_end) {
-        const char *newline = memchr(search_start, '\n', file_end - search_start);
-        if (!newline) break;
-        
-        // Check if we need to expand capacity
-        if (viewer->file_data->num_lines >= viewer->file_data->capacity) {
-            viewer->file_data->capacity *= 2;
-            size_t *new_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->capacity * sizeof(size_t));
-            if (!new_offsets) {
-                fprintf(stderr, "Failed to expand line offsets array\n");
-                return -1;
-            }
-            viewer->file_data->line_offsets = new_offsets;
-        }
-        
-        // Store offset to character after newline
-        size_t next_line_offset = (newline - viewer->file_data->data) + 1;
-        if (next_line_offset < viewer->file_data->length) {
-            viewer->file_data->line_offsets[viewer->file_data->num_lines++] = next_line_offset;
-        }
-        
-        search_start = newline + 1;
-    }
-    
-    // Trim capacity to actual size
-    if (viewer->file_data->capacity > viewer->file_data->num_lines) {
-        size_t *trimmed_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->num_lines * sizeof(size_t));
-        if (trimmed_offsets) {
-            viewer->file_data->line_offsets = trimmed_offsets;
-        }
-        // If realloc fails for trimming, we just keep the larger array - not a critical error
-    }
-    
-    return 0;
-}
 
 // --- Column Analysis ---
 static int analyze_columns(struct DSVViewer *viewer) {
@@ -241,13 +126,13 @@ static int init_file_operations(DSVViewer *viewer, const char *filename, char de
     
     // Phase 1: File loading
     double load_start = get_time_ms();
-    if (load_file(viewer, filename) != 0) return -1;
+    if (load_file_data(viewer, filename) != 0) return -1;
     phase_time = get_time_ms() - load_start;
     printf("File loading: %.2f ms\n", phase_time);
     
     // Phase 2: Delimiter detection
     double delim_start = get_time_ms();
-    viewer->file_data->delimiter = (delimiter == 0) ? detect_delimiter(viewer->file_data->data, viewer->file_data->length) : delimiter;
+    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter);
     phase_time = get_time_ms() - delim_start;
     printf("Delimiter detection: %.2f ms\n", phase_time);
     
@@ -272,7 +157,7 @@ static int init_data_structures(DSVViewer *viewer) {
     
     // Phase 4: File scanning
     double scan_start = get_time_ms();
-    if (scan_file(viewer) != 0) return -1;
+    if (scan_file_data(viewer) != 0) return -1;
     phase_time = get_time_ms() - scan_start;
     printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->file_data->num_lines);
     
@@ -353,7 +238,7 @@ static void cleanup_file_and_parse_data_resources(DSVViewer *viewer) {
 void cleanup_viewer(DSVViewer *viewer) {
     if (!viewer) return;
 
-    unload_file(viewer);
+    cleanup_file_data(viewer);
     cleanup_cache_system((struct DSVViewer*)viewer);
     cleanup_file_and_parse_data_resources(viewer);
 

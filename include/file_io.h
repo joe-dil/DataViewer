@@ -1,0 +1,20 @@
+#ifndef FILE_IO_H
+#define FILE_IO_H
+
+#include <stddef.h>
+
+// Forward declarations
+struct DSVViewer;
+
+// File I/O operations
+int load_file_data(struct DSVViewer *viewer, const char *filename);
+void cleanup_file_data(struct DSVViewer *viewer);
+int scan_file_data(struct DSVViewer *viewer);
+char detect_file_delimiter(const char *data, size_t length, char override_delimiter);
+
+// Validation functions - FIX CRITICAL ISSUES HERE
+int validate_file_bounds(struct DSVViewer *viewer);
+int handle_empty_file(struct DSVViewer *viewer);
+int handle_single_line_file(struct DSVViewer *viewer);
+
+#endif // FILE_IO_H 

@@ -1,0 +1,177 @@
+#include "viewer.h"
+#include "file_io.h"
+#include "display_state.h" // For DELIMITER_DETECTION_SAMPLE_SIZE etc. - this should be moved later
+#include "file_and_parse_data.h"
+
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define DELIMITER_DETECTION_SAMPLE_SIZE 1024
+#define LINE_ESTIMATION_SAMPLE_SIZE 65536
+#define LINE_CAPACITY_GROWTH_FACTOR 1.2
+#define DEFAULT_CHARS_PER_LINE 80
+
+// --- Validation Functions (Critical Fixes) ---
+
+int validate_file_bounds(struct DSVViewer *viewer) {
+    // CRITICAL: Prevent SIZE_MAX assignment when num_lines == 0
+    if (viewer->file_data->num_lines == 0) {
+        // Create minimal valid state instead of underflow
+        viewer->file_data->num_lines = 1;
+        viewer->file_data->line_offsets = malloc(sizeof(size_t));
+        if (!viewer->file_data->line_offsets) return -1;
+        viewer->file_data->line_offsets[0] = 0;
+        return 0; // Signal empty file handled
+    }
+    return 1; // Normal file
+}
+
+int handle_empty_file(struct DSVViewer *viewer) {
+    if (viewer->file_data->length == 0) {
+        // Set up minimal valid state for empty files
+        viewer->file_data->num_lines = 1;
+        viewer->file_data->line_offsets = malloc(sizeof(size_t));
+        if (!viewer->file_data->line_offsets) return -1;
+        viewer->file_data->line_offsets[0] = 0;
+        viewer->file_data->delimiter = ','; // Default delimiter
+        return 0;
+    }
+    return 1; // Not empty
+}
+
+// Placeholder for single line file handling
+int handle_single_line_file(struct DSVViewer *viewer) {
+    // TODO: Implement specific logic for single-line files if needed.
+    // For now, it is handled by the normal scanning process.
+    if (viewer->file_data->num_lines == 1) {
+        // Potentially set different display defaults or analysis paths
+    }
+    return 0;
+}
+
+
+// --- Static Helper Functions ---
+
+static size_t estimate_line_count(DSVViewer *viewer) {
+    const size_t sample_size = (viewer->file_data->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->file_data->length : LINE_ESTIMATION_SAMPLE_SIZE;
+    if (sample_size == 0) return 1;
+
+    int sample_lines = 0;
+    const char *search_start = viewer->file_data->data;
+    const char *search_end = viewer->file_data->data + sample_size;
+
+    while (search_start < search_end) {
+        const char *newline = memchr(search_start, '\n', search_end - search_start);
+        if (!newline) break;
+        sample_lines++;
+        search_start = newline + 1;
+    }
+
+    if (sample_lines == 0) return (viewer->file_data->length / DEFAULT_CHARS_PER_LINE) + 1;
+    double avg_line_len = (double)sample_size / sample_lines;
+    return (size_t)((viewer->file_data->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
+}
+
+// --- Public API Functions ---
+
+char detect_file_delimiter(const char *data, size_t length, char override_delimiter) {
+    if (override_delimiter != 0) {
+        return override_delimiter;
+    }
+    int comma_count = 0, tab_count = 0, pipe_count = 0;
+    size_t scan_len = (length < DELIMITER_DETECTION_SAMPLE_SIZE) ? length : DELIMITER_DETECTION_SAMPLE_SIZE;
+    for (size_t i = 0; i < scan_len; i++) {
+        if (data[i] == ',') comma_count++;
+        else if (data[i] == '\t') tab_count++;
+        else if (data[i] == '|') pipe_count++;
+    }
+    if (tab_count > comma_count && tab_count > pipe_count) return '\t';
+    if (pipe_count > comma_count && pipe_count > tab_count) return '|';
+    return ',';
+}
+
+int load_file_data(struct DSVViewer *viewer, const char *filename) {
+    struct stat st;
+    viewer->file_data->fd = open(filename, O_RDONLY);
+    if (viewer->file_data->fd == -1) { perror("Failed to open file"); return -1; }
+    if (fstat(viewer->file_data->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->file_data->fd); return -1; }
+    viewer->file_data->length = st.st_size;
+    if (viewer->file_data->length > 0) {
+        viewer->file_data->data = mmap(NULL, viewer->file_data->length, PROT_READ, MAP_PRIVATE, viewer->file_data->fd, 0);
+        if (viewer->file_data->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->file_data->fd); return -1; }
+    } else {
+        viewer->file_data->data = NULL; // No mapping for empty file
+    }
+    return 0;
+}
+
+void cleanup_file_data(struct DSVViewer *viewer) {
+    if (viewer->file_data->data != NULL && viewer->file_data->data != MAP_FAILED) {
+        munmap(viewer->file_data->data, viewer->file_data->length);
+    }
+    if (viewer->file_data->fd != -1) {
+        close(viewer->file_data->fd);
+    }
+}
+
+int scan_file_data(struct DSVViewer *viewer) {
+    int empty_result = handle_empty_file(viewer);
+    if (empty_result == 0) return 0; // Empty file handled, minimal state created.
+    if (empty_result == -1) return -1; // Error allocating for empty file.
+
+    viewer->file_data->capacity = estimate_line_count(viewer);
+    viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
+    if (!viewer->file_data->line_offsets) {
+        fprintf(stderr, "Failed to allocate memory for line offsets\n");
+        return -1;
+    }
+
+    viewer->file_data->num_lines = 0;
+    viewer->file_data->line_offsets[viewer->file_data->num_lines++] = 0;
+
+    const char *search_start = viewer->file_data->data;
+    const char *file_end = viewer->file_data->data + viewer->file_data->length;
+
+    while (search_start < file_end) {
+        const char *newline = memchr(search_start, '\n', file_end - search_start);
+        if (!newline) break;
+
+        if (viewer->file_data->num_lines >= viewer->file_data->capacity) {
+            viewer->file_data->capacity *= 2;
+            size_t *new_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->capacity * sizeof(size_t));
+            if (!new_offsets) {
+                fprintf(stderr, "Failed to expand line offsets array\n");
+                return -1;
+            }
+            viewer->file_data->line_offsets = new_offsets;
+        }
+
+        size_t next_line_offset = (newline - viewer->file_data->data) + 1;
+        if (next_line_offset < viewer->file_data->length) {
+            viewer->file_data->line_offsets[viewer->file_data->num_lines++] = next_line_offset;
+        }
+
+        search_start = newline + 1;
+    }
+
+    // Add bounds validation after scanning
+    if (validate_file_bounds(viewer) == -1) {
+        return -1; // Allocation error in validation
+    }
+    
+    if (viewer->file_data->capacity > viewer->file_data->num_lines) {
+        size_t *trimmed_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->num_lines * sizeof(size_t));
+        if (trimmed_offsets) {
+            viewer->file_data->line_offsets = trimmed_offsets;
+        }
+    }
+    
+    handle_single_line_file(viewer);
+
+    return 0;
+} 
