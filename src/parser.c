@@ -218,22 +218,30 @@ static void initialize_cache_if_needed(DSVViewer *viewer) {
     }
 }
 
-// --- Main Initialization Orchestrator ---
-int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
-    double start_time = get_time_ms();
-    double phase_time;
-    int ret = -1; // Default to failure
+// --- Modular Initialization Functions ---
 
+static int init_core_components(DSVViewer *viewer) {
+    double start_time = get_time_ms();
+    
     // Ensure all pointers are NULL so cleanup is safe
     memset(viewer, 0, sizeof(DSVViewer));
     
     if (init_components(viewer) != 0) {
-        goto cleanup;
+        return -1;
     }
+    
+    double phase_time = get_time_ms() - start_time;
+    printf("Core components: %.2f ms\n", phase_time);
+    return 0;
+}
+
+static int init_file_operations(DSVViewer *viewer, const char *filename, char delimiter) {
+    double start_time = get_time_ms();
+    double phase_time;
     
     // Phase 1: File loading
     double load_start = get_time_ms();
-    if (load_file(viewer, filename) != 0) goto cleanup;
+    if (load_file(viewer, filename) != 0) return -1;
     phase_time = get_time_ms() - load_start;
     printf("File loading: %.2f ms\n", phase_time);
     
@@ -243,25 +251,43 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     phase_time = get_time_ms() - delim_start;
     printf("Delimiter detection: %.2f ms\n", phase_time);
     
+    double total_time = get_time_ms() - start_time;
+    printf("File operations: %.2f ms\n", total_time);
+    return 0;
+}
+
+static int init_data_structures(DSVViewer *viewer) {
+    double start_time = get_time_ms();
+    double phase_time;
+    
     // Phase 3: Memory allocation
     double alloc_start = get_time_ms();
     viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     if (!viewer->file_data->fields) {
         fprintf(stderr, "Failed to allocate memory for field descriptors\n");
-        goto cleanup;
+        return -1;
     }
     phase_time = get_time_ms() - alloc_start;
     printf("Field allocation: %.2f ms\n", phase_time);
     
     // Phase 4: File scanning
     double scan_start = get_time_ms();
-    if (scan_file(viewer) != 0) goto cleanup;
+    if (scan_file(viewer) != 0) return -1;
     phase_time = get_time_ms() - scan_start;
     printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->file_data->num_lines);
     
+    double total_time = get_time_ms() - start_time;
+    printf("Data structures: %.2f ms\n", total_time);
+    return 0;
+}
+
+static int init_display_features(DSVViewer *viewer) {
+    double start_time = get_time_ms();
+    double phase_time;
+    
     // Phase 5: Column analysis
     double analysis_start = get_time_ms();
-    if (analyze_columns(viewer) != 0) goto cleanup;
+    if (analyze_columns(viewer) != 0) return -1;
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
@@ -274,17 +300,45 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     printf("Cache initialization: %.2f ms\n", phase_time);
     
     double total_time = get_time_ms() - start_time;
+    printf("Display features: %.2f ms\n", total_time);
+    return 0;
+}
+
+// --- Main Initialization Functions ---
+
+// Fast, modular initialization - improved testability and maintainability
+int init_viewer_fast(DSVViewer *viewer, const char *filename, char delimiter) {
+    double start_time = get_time_ms();
+    
+    if (init_core_components(viewer) != 0) {
+        goto cleanup;
+    }
+    
+    if (init_file_operations(viewer, filename, delimiter) != 0) {
+        goto cleanup;
+    }
+    
+    if (init_data_structures(viewer) != 0) {
+        goto cleanup;
+    }
+    
+    if (init_display_features(viewer) != 0) {
+        goto cleanup;
+    }
+    
+    double total_time = get_time_ms() - start_time;
     printf("Total initialization: %.2f ms\n", total_time);
     
-    ret = 0; // Success
+    return 0;
 
 cleanup:
-    if (ret != 0) {
-        // If we failed, clean up everything.
-        // On success, cleanup happens later in main().
-        cleanup_viewer(viewer);
-    }
-    return ret;
+    cleanup_viewer(viewer);
+    return -1;
+}
+
+// Legacy wrapper - maintains compatibility with existing code
+int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+    return init_viewer_fast(viewer, filename, delimiter);
 }
 
 static void cleanup_file_and_parse_data_resources(DSVViewer *viewer) {
