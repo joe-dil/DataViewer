@@ -315,6 +315,14 @@ void cleanup_viewer(DSVViewer *viewer) {
 
 // --- Core Parsing Logic ---
 
+// A state machine for the parser to improve readability.
+typedef struct {
+    int in_quotes;
+    int needs_unescaping;
+    size_t field_start;
+    size_t field_count;
+} ParseState;
+
 // Helper to record a new field, avoiding duplicate code.
 static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_count, int max_fields, size_t field_start, size_t current_pos, int needs_unescaping) {
     if (*field_count < (size_t)max_fields) {
@@ -324,49 +332,60 @@ static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_cou
 }
 
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
-    if (offset >= viewer->file_data->length) return 0;
-
-    size_t field_count = 0;
-    int in_quotes = 0;
-    int needs_unescaping = 0;
-    size_t i = offset;
-    size_t field_start = offset;
+    // Cache frequently accessed variables from viewer->file_data to local variables.
+    // This reduces pointer dereferencing overhead inside the loop.
     const char *data = viewer->file_data->data;
     const size_t length = viewer->file_data->length;
     const char delimiter = viewer->file_data->delimiter;
 
+    if (offset >= length) return 0;
+
+    // Initialize the state machine for the parser.
+    ParseState state = {
+        .in_quotes = 0,
+        .needs_unescaping = 0,
+        .field_start = offset,
+        .field_count = 0,
+    };
+
+    size_t i = offset;
     while (i < length) {
         char c = data[i];
 
-        if (in_quotes) {
+        // State: Inside a quoted field
+        if (state.in_quotes) {
             if (c == '"') {
                 // Check for an escaped quote ("")
                 if (i + 1 < length && data[i + 1] == '"') {
-                    needs_unescaping = 1;
-                    i++; // Skip the second quote; loop increment will skip the first
+                    state.needs_unescaping = 1;
+                    i++; // Skip the second quote; loop will increment over the first
                 } else {
-                    in_quotes = 0; // This is a closing quote
+                    state.in_quotes = 0; // This is a closing quote
                 }
             }
-        } else { // Not in quotes
+        // State: Not in a quoted field
+        } else {
             if (c == '"') {
-                in_quotes = 1; // This is an opening quote
+                state.in_quotes = 1; // Start of a quoted field
             } else if (c == delimiter) {
-                record_field(viewer, fields, &field_count, max_fields, field_start, i, needs_unescaping);
-                field_start = i + 1;
-                needs_unescaping = 0;
+                // End of a field, record it
+                record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
+                state.field_start = i + 1;
+                state.needs_unescaping = 0; // Reset for next field
             } else if (c == '\n') {
-                break; // End of line
+                // End of the line, exit the loop
+                break;
             }
         }
         i++;
     }
     
-    // Record the final field after the loop
-    record_field(viewer, fields, &field_count, max_fields, field_start, i, needs_unescaping);
+    // After the loop, there's always one last field to record.
+    // This handles lines that don't end with a delimiter or newline.
+    record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
 
-    viewer->file_data->num_fields = field_count;
-    return field_count;
+    viewer->file_data->num_fields = state.field_count;
+    return state.field_count;
 }
 
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
