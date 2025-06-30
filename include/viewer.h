@@ -28,7 +28,7 @@
 typedef struct DSVViewer {
     // Pointers to modularized components.
     struct DisplayCache *display_cache;
-    struct CacheMemoryPool *mem_pool;
+    struct CacheAllocator *mem_pool;
     struct StringInternTable *intern_table;
     
     // New component pointer for our incremental refactor

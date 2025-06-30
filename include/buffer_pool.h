@@ -8,47 +8,46 @@
 // Buffer pool management functions
 
 /**
- * Initialize a ManagedBufferPool with proper metadata
- * @param pool A pointer to the ManagedBufferPool.
- * @param config A pointer to the application configuration.
- * @return DSV_OK on success, DSV_ERROR_MEMORY on failure.
+ * @brief Initialize work buffers with proper metadata
+ * @param buffers A pointer to the WorkBuffers.
+ * @param config Configuration containing buffer parameters.
+ * @return DSVResult indicating success or failure.
  */
-DSVResult init_buffer_pool(ManagedBufferPool *pool, const DSVConfig *config);
+DSVResult init_buffer_pool(WorkBuffers *buffers, const DSVConfig *config);
 
 /**
- * Acquire a buffer from the pool for a specific purpose
- * @param pool A pointer to the ManagedBufferPool.
- * @param purpose A string describing the intended use.
- * @return A pointer to the buffer, or NULL if acquisition fails.
+ * @brief Acquire a buffer for temporary use.
+ * @param buffers A pointer to the WorkBuffers.
+ * @param purpose Description of what the buffer will be used for (for debugging).
+ * @return Pointer to an available buffer, or NULL if none available.
  */
-char* acquire_buffer(ManagedBufferPool *pool, const char *purpose);
+char* acquire_buffer(WorkBuffers *buffers, const char *purpose);
 
 /**
- * Release a buffer back to the pool
- * @param pool A pointer to the ManagedBufferPool.
- * @param buffer A pointer to the buffer to release.
+ * @brief Release a buffer back to the available pool.
+ * @param buffers A pointer to the WorkBuffers.
+ * @param buffer Pointer to the buffer to release.
  */
-void release_buffer(ManagedBufferPool *pool, const char* buffer);
+void release_buffer(WorkBuffers *buffers, const char* buffer);
 
 /**
- * @brief Frees all memory associated with a ManagedBufferPool.
- *
- * @param pool A pointer to the ManagedBufferPool.
+ * @brief Frees all memory associated with work buffers.
+ * @param buffers A pointer to the WorkBuffers.
  */
-void cleanup_buffer_pool(ManagedBufferPool *pool);
+void cleanup_buffer_pool(WorkBuffers *buffers);
 
 /**
- * Reset all buffers in the pool to available state
- * @param pool A pointer to the ManagedBufferPool.
+ * @brief Reset all buffers to available state.
+ * @param buffers A pointer to the WorkBuffers.
  */
-void reset_buffer_pool(ManagedBufferPool *pool);
+void reset_buffer_pool(WorkBuffers *buffers);
 
 /**
- * Validate that a buffer pointer is valid within the pool
- * @param pool A pointer to the ManagedBufferPool.
- * @param buffer A pointer to validate.
- * @return DSV_SUCCESS if valid, DSV_ERROR_INVALID_PARAMETER if invalid.
+ * @brief Validate that a buffer pointer is valid.
+ * @param buffers A pointer to the WorkBuffers.
+ * @param buffer The buffer pointer to validate.
+ * @return DSV_OK if valid, DSV_ERROR_INVALID_ARGS if invalid.
  */
-DSVResult validate_buffer_ptr(ManagedBufferPool *pool, const char* buffer);
+DSVResult validate_buffer_ptr(WorkBuffers *buffers, const char* buffer);
 
 #endif // BUFFER_POOL_H 

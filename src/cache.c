@@ -11,8 +11,8 @@
 static uint32_t fnv1a_hash(const char *str);
 static int init_display_cache(struct DSVViewer *viewer);
 static void cleanup_display_cache(struct DSVViewer *viewer);
-static int init_cache_memory_pool(struct DSVViewer *viewer);
-static void cleanup_cache_memory_pool(struct DSVViewer *viewer);
+static int init_cache_allocator(struct DSVViewer *viewer);
+static void cleanup_cache_allocator(struct DSVViewer *viewer);
 static int init_string_intern_table(struct DSVViewer *viewer);
 static void cleanup_string_intern_table(struct DSVViewer *viewer);
 static const char* intern_string(struct DSVViewer *viewer, const char* str);
@@ -29,7 +29,7 @@ static uint32_t fnv1a_hash(const char *str) {
     return hash;
 }
 
-// --- Memory Pool Management ---
+// --- Cache Allocator Management ---
 static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer) {
     if (!viewer->mem_pool || (size_t)viewer->mem_pool->entry_pool_used >= (size_t)viewer->config->cache_size * 2) return NULL;
     return &viewer->mem_pool->entry_pool[viewer->mem_pool->entry_pool_used++];
@@ -45,8 +45,8 @@ static char* pool_strdup(struct DSVViewer *viewer, const char* str) {
     return dest;
 }
 
-static int init_cache_memory_pool(struct DSVViewer *viewer) {
-    viewer->mem_pool = calloc(1, sizeof(CacheMemoryPool));
+static int init_cache_allocator(struct DSVViewer *viewer) {
+    viewer->mem_pool = calloc(1, sizeof(CacheAllocator));
     if (!viewer->mem_pool) return -1;
 
     viewer->mem_pool->entry_pool = calloc(viewer->config->cache_size * 2, sizeof(DisplayCacheEntry));
@@ -58,7 +58,7 @@ static int init_cache_memory_pool(struct DSVViewer *viewer) {
     return 0;
 }
 
-static void cleanup_cache_memory_pool(struct DSVViewer *viewer) {
+static void cleanup_cache_allocator(struct DSVViewer *viewer) {
     if (!viewer->mem_pool) return;
     if (viewer->mem_pool->entry_pool) {
         free(viewer->mem_pool->entry_pool);
@@ -232,7 +232,7 @@ static void cleanup_display_cache(struct DSVViewer *viewer) {
 DSVResult init_cache_system(struct DSVViewer *viewer, const DSVConfig *config) {
     // Config is already in the viewer struct, but this makes the dependency explicit.
     (void)config; 
-    if (init_cache_memory_pool(viewer) != 0) return DSV_ERROR_CACHE;
+    if (init_cache_allocator(viewer) != 0) return DSV_ERROR_CACHE;
     if (init_string_intern_table(viewer) != 0) return DSV_ERROR_CACHE;
     if (init_display_cache(viewer) != 0) return DSV_ERROR_CACHE;
     return DSV_OK;
@@ -241,5 +241,5 @@ DSVResult init_cache_system(struct DSVViewer *viewer, const DSVConfig *config) {
 void cleanup_cache_system(struct DSVViewer *viewer) {
     cleanup_string_intern_table(viewer);
     cleanup_display_cache(viewer);
-    cleanup_cache_memory_pool(viewer);
+    cleanup_cache_allocator(viewer);
 } 

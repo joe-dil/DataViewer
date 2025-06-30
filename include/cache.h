@@ -51,13 +51,13 @@ typedef struct StringInternTable {
     StringInternEntry **buckets;
 } StringInternTable;
 
-// The memory pool for the cache system
-typedef struct CacheMemoryPool {
+// Custom allocator for cache data - never frees individual items
+typedef struct CacheAllocator {
     DisplayCacheEntry* entry_pool;
     int entry_pool_used;
     char* string_pool;
     size_t string_pool_used;
-} CacheMemoryPool;
+} CacheAllocator;
 
 
 // --- Public Function Declarations for the Cache Subsystem ---

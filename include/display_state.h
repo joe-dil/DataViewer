@@ -9,7 +9,7 @@
 #define ASCII_SEPARATOR " | "
 #define UNICODE_SEPARATOR " │ "
 
-// Enhanced BufferPool with metadata and validation
+// Temporary buffer checkout system for reusable work buffers
 typedef struct {
     // Named buffers for specific purposes
     char *render_buffer;      // Primary field rendering
@@ -24,10 +24,10 @@ typedef struct {
     int *is_in_use;
     const char** buffer_names;
     int pool_size;
-} ManagedBufferPool;
+} WorkBuffers;
 
 // Backward compatibility typedef
-typedef ManagedBufferPool BufferPool;
+typedef WorkBuffers BufferPool;
 
 // A component to hold state related to the display and UI.
 typedef struct {
@@ -36,7 +36,7 @@ typedef struct {
     const char* separator;
     int *col_widths;
     size_t num_cols;
-    ManagedBufferPool buffers;
+    WorkBuffers buffers;
     int needs_redraw;
 } DisplayState;
 
