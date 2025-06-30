@@ -146,8 +146,8 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     
-    clear();
-    
+    // ANTI-FLICKER FIX: Replace clear() with line-by-line clearing
+    // Only clear lines that will be used to avoid full screen flash
     int display_rows = rows - 1;
     int screen_start_row = 0;
     
@@ -159,11 +159,22 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     }
     
     for (int screen_row = screen_start_row; screen_row < display_rows; screen_row++) {
+        // Clear each line before drawing to prevent artifacts
+        move(screen_row, 0);
+        clrtoeol();
+        
         size_t file_line = start_row + screen_row - (viewer->display_state->show_header ? 0 : screen_start_row);
-        if (file_line >= viewer->file_data->num_lines) break;
+        if (file_line >= viewer->file_data->num_lines) {
+            // Clear remaining lines if no more data
+            continue;
+        }
 
         draw_data_row(screen_row, viewer, file_line, start_col, viewer->config);
     }
+    
+    // Clear status line before updating
+    move(rows - 1, 0);
+    clrtoeol();
     
     // Use %zu for size_t types
     mvprintw(rows - 1, 0, "Lines %zu-%zu of %zu | Row: %zu | Col: %zu | q: quit | h: help",
