@@ -114,6 +114,12 @@ void run_viewer(DSVViewer *viewer) {
         }
 
         int ch = getch();
+        
+        // Handle mouse events and other special cases that can cause busy loops
+        if (ch == ERR || ch == KEY_MOUSE || ch == KEY_RESIZE) {
+            continue; // Skip processing, just continue the main loop
+        }
+        
         getmaxyx(stdscr, rows, cols);
         int page_size = rows - 1;
         
