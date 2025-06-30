@@ -4,16 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <ncurses.h>
-#include <ctype.h>
 #include <locale.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <pthread.h>
 
 // Include headers for modularized components
 // These headers contain the necessary struct definitions and function prototypes.

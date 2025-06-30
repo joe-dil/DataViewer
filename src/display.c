@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
 

@@ -1,6 +1,7 @@
 #include "viewer.h"
 #include <string.h>
 #include <locale.h>
+#include <ncurses.h>
 #include "logging.h"
 #include "error_context.h"
 #include "config.h"

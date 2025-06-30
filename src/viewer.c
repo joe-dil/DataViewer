@@ -1,6 +1,5 @@
 #include "viewer.h"
 #include "config.h"
-#include "viewer_core.h"
 #include "file_io.h"
 #include "analysis.h"
 #include "utils.h"
@@ -13,9 +12,9 @@
 #include <stdlib.h>
 #include <locale.h>
 
-// --- Component Lifecycle Management ---
+// --- Internal Component Functions (static) ---
 
-DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfig *config) {
+static DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfig *config) {
     viewer->config = config;
 
     viewer->display_state = malloc(sizeof(DisplayState));
@@ -42,7 +41,7 @@ DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfig *conf
     return DSV_OK;
 }
 
-void cleanup_viewer_resources(struct DSVViewer *viewer) {
+static void cleanup_viewer_resources(struct DSVViewer *viewer) {
     if (!viewer || !viewer->file_data) return;
 
     if (viewer->file_data->fields) {
@@ -79,15 +78,11 @@ void cleanup_viewer(DSVViewer *viewer) {
     }
 }
 
-// The plan specifies this function but cleanup_viewer covers all of it.
-// This can be used later to break up the main cleanup function.
-void cleanup_viewer_components(struct DSVViewer *viewer) {
-    cleanup_viewer(viewer);
-}
+
 
 // --- Configuration Management ---
 
-void configure_viewer_settings(struct DSVViewer *viewer, const DSVConfig *config) {
+static void configure_viewer_settings(struct DSVViewer *viewer, const DSVConfig *config) {
     (void)config; // Suppress unused parameter warning
     viewer->display_state->show_header = 1;
 
@@ -101,7 +96,7 @@ void configure_viewer_settings(struct DSVViewer *viewer, const DSVConfig *config
     }
 }
 
-void initialize_viewer_cache(struct DSVViewer *viewer, const DSVConfig *config) {
+static void initialize_viewer_cache(struct DSVViewer *viewer, const DSVConfig *config) {
     if (viewer->file_data->num_lines > (size_t)config->cache_threshold_lines || viewer->display_state->num_cols > (size_t)config->cache_threshold_cols) {
         if (init_cache_system((struct DSVViewer*)viewer, config) != DSV_OK) {
             LOG_WARN("Failed to initialize cache. Continuing without it.");

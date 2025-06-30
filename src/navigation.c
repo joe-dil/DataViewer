@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include <ncurses.h>
 #include "display_state.h"
 
 // Explicit redraw control enum - FIXES ALL REDRAW ISSUES

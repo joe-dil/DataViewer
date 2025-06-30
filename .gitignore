@@ -26,4 +26,4 @@ bin/test_runner
 # Profiling/debugging
 *.out
 profile_output.txt
-gmon.out 
+gmon.out deps/

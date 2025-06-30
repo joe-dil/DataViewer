@@ -1,30 +1,49 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -O3 -flto -Iinclude
+CFLAGS_BASE = -Wall -Wextra -std=c99 -Iinclude
+CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -flto -DNDEBUG
+CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG -fsanitize=address
+CFLAGS = $(CFLAGS_RELEASE)
 LIBS = -lncurses -lpthread
 SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
+DEPDIR = deps
 TARGET = $(BINDIR)/viewer
 
 # All .c files in the src directory, excluding main.c
 LIB_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
 LIB_OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
 MAIN_OBJECT = $(OBJDIR)/main.o
+DEPENDENCIES = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(wildcard $(SRCDIR)/*.c))
 
-.PHONY: all clean test valgrind
+.PHONY: all clean test valgrind release debug
 
-all: $(TARGET)
+# Default target is release build
+all: release
+
+# Release build (optimized)
+release: CFLAGS = $(CFLAGS_RELEASE)
+release: $(TARGET)
+
+# Debug build (with debugging symbols and address sanitizer)
+debug: CFLAGS = $(CFLAGS_DEBUG)
+debug: LIBS += -fsanitize=address
+debug: $(TARGET)
 
 $(TARGET): $(MAIN_OBJECT) $(LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $(TARGET) $(LIBS)
 
+# Object compilation with automatic dependency generation
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -c $< -o $@
+	@mkdir -p $(@D) $(DEPDIR)
+	$(CC) $(CFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -c $< -o $@
+
+# Include dependency files if they exist
+-include $(DEPENDENCIES)
 
 clean:
-	@rm -rf $(OBJDIR) $(BINDIR)
+	@rm -rf $(OBJDIR) $(BINDIR) $(DEPDIR)
 
 test:
 	@echo "Running tests..."
@@ -50,18 +69,16 @@ install-deps:
 		echo "Please install ncurses development libraries for your system"; \
 	fi
 
-# Debug build
-debug: CFLAGS += -g -DDEBUG
-debug: $(TARGET)
-
 # Help target
 help:
 	@echo "Usage: make [target]"
 	@echo "Targets:"
-	@echo "  all        - Build the DSV viewer (default)"
-	@echo "  clean      - Remove build artifacts"
+	@echo "  all        - Build release version (default)"
+	@echo "  release    - Build optimized release version"
+	@echo "  debug      - Build debug version with address sanitizer"
+	@echo "  clean      - Remove all build artifacts"
 	@echo "  test       - Build and run all unit tests"
 	@echo "  valgrind   - Run unit tests with Valgrind"
 	@echo "  help       - Show this help message"
 
-.PHONY: clean test valgrind install-deps debug help 
+.PHONY: all clean test valgrind install-deps release debug help 
