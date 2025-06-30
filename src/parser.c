@@ -1,6 +1,7 @@
 #include "viewer.h"
 #include "display_state.h"
 #include "file_io.h"
+#include "analysis.h"
 #include <wchar.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -20,44 +21,7 @@ static double get_time_ms(void) {
 }
 
 // --- Static Helper Declarations ---
-static int analyze_columns(struct DSVViewer *viewer);
 
-
-// --- Column Analysis ---
-static int analyze_columns(struct DSVViewer *viewer) {
-    // Simple and fast: analyze first N lines max, single threaded
-    size_t sample_lines = viewer->file_data->num_lines > COLUMN_ANALYSIS_SAMPLE_LINES ? COLUMN_ANALYSIS_SAMPLE_LINES : viewer->file_data->num_lines;
-    
-    int col_widths[MAX_COLS] = {0};
-    size_t max_cols = 0;
-    FieldDesc fields[MAX_COLS];
-    
-    for (size_t i = 0; i < sample_lines; i++) {
-        size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[i], fields, MAX_COLS);
-        if (num_fields > max_cols) max_cols = num_fields;
-        
-        for (size_t col = 0; col < num_fields && col < MAX_COLS; col++) {
-            if (col_widths[col] >= MAX_COLUMN_WIDTH) continue; // Cap at max chars
-            int width = calculate_field_display_width(viewer, &fields[col]);
-            if (width > col_widths[col]) col_widths[col] = width;
-        }
-    }
-    
-    // Set final results
-    viewer->display_state->num_cols = max_cols > MAX_COLS ? MAX_COLS : max_cols;
-    viewer->display_state->col_widths = malloc(viewer->display_state->num_cols * sizeof(int));
-    if (!viewer->display_state->col_widths) {
-        fprintf(stderr, "Failed to allocate memory for column widths\n");
-        return -1;
-    }
-    
-    for (size_t i = 0; i < viewer->display_state->num_cols; i++) {
-        viewer->display_state->col_widths[i] = col_widths[i] > MAX_COLUMN_WIDTH ? MAX_COLUMN_WIDTH : 
-                               (col_widths[i] < MIN_COLUMN_WIDTH ? MIN_COLUMN_WIDTH : col_widths[i]);
-    }
-    
-    return 0;
-}
 
 // --- Component Initialization ---
 static int init_components(DSVViewer *viewer) {
@@ -172,7 +136,7 @@ static int init_display_features(DSVViewer *viewer) {
     
     // Phase 5: Column analysis
     double analysis_start = get_time_ms();
-    if (analyze_columns(viewer) != 0) return -1;
+    if (analyze_columns_legacy(viewer) != 0) return -1;
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
