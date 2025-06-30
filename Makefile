@@ -5,16 +5,19 @@ SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
 TARGET = $(BINDIR)/viewer
-SOURCES = $(wildcard $(SRCDIR)/*.c)
-OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
+
+# All .c files in the src directory, excluding main.c
+LIB_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
+LIB_OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
+MAIN_OBJECT = $(OBJDIR)/main.o
 
 .PHONY: all clean test valgrind
 
 all: $(TARGET)
 
-$(TARGET): $(OBJECTS)
+$(TARGET): $(MAIN_OBJECT) $(LIB_OBJECTS)
 	@mkdir -p $(@D)
-	$(CC) $(OBJECTS) -o $(TARGET) $(LIBS)
+	$(CC) $^ -o $(TARGET) $(LIBS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(@D)
