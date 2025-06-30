@@ -16,7 +16,7 @@ void cleanup_column_analysis(ColumnAnalysis *analysis) {
 }
 
 // Analyze column widths by sampling the file data
-int analyze_columns_legacy(struct DSVViewer *viewer, const DSVConfig *config) {
+int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config) {
     if (!viewer || !viewer->file_data || !config) return -1;
 
     size_t sample_lines = viewer->file_data->num_lines > (size_t)config->column_analysis_sample_lines ? 

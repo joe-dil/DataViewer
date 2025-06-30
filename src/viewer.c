@@ -141,7 +141,7 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
 
     // Display features
     phase_time = get_time_ms();
-    if (analyze_columns_legacy(viewer, config) != 0) {
+    if (analyze_column_widths(viewer, config) != 0) {
         LOG_ERROR("Failed to analyze columns.");
         return DSV_ERROR_DISPLAY;
     }

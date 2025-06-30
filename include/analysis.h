@@ -9,7 +9,7 @@
 // Forward declarations
 struct DSVViewer;
 
-// Analysis results structure (currently unused, but kept for future extensions)
+// Analysis results structure (for future extensions: histograms, stats, etc.)
 typedef struct {
     int *col_widths;           // Column width array
     size_t num_cols;           // Number of columns
@@ -21,6 +21,6 @@ typedef struct {
 void cleanup_column_analysis(ColumnAnalysis *analysis);
 
 // Analyze column widths and store them in viewer->display_state
-int analyze_columns_legacy(struct DSVViewer *viewer, const DSVConfig *config);
+int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config);
 
 #endif // ANALYSIS_H 
