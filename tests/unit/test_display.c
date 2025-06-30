@@ -1,5 +1,7 @@
 #include "framework/test_runner.h"
 #include "viewer.h"
+#include "config.h"
+#include "buffer_pool.h"
 #include <string.h>
 
 // --- Mock Data ---
@@ -19,6 +21,17 @@ void setup_display_mocks() {
     // Link the mock components together
     mock_viewer.display_state = &mock_display_state;
     mock_viewer.file_data = &mock_file_data;
+
+    // Initialize the buffer pool for tests
+    DSVConfig config;
+    config_init_defaults(&config);
+    mock_viewer.config = &config;
+    init_buffer_pool(&mock_display_state.buffers, &config);
+}
+
+void teardown_display_mocks() {
+    // Clean up buffer pool
+    cleanup_buffer_pool(&mock_display_state.buffers);
 }
 
 // --- Test Cases ---
@@ -30,6 +43,7 @@ void test_separator_logic_ascii() {
     // that sets the separator. For now, we set it directly for the test.
     mock_display_state.separator = ASCII_SEPARATOR;
     TEST_ASSERT(strcmp(mock_display_state.separator, " | ") == 0, "Should use ASCII separator.");
+    teardown_display_mocks();
 }
 
 void test_separator_logic_unicode() {
@@ -37,15 +51,17 @@ void test_separator_logic_unicode() {
     mock_display_state.supports_unicode = 1;
     mock_display_state.separator = UNICODE_SEPARATOR;
     TEST_ASSERT(strcmp(mock_display_state.separator, " │ ") == 0, "Should use Unicode separator.");
+    teardown_display_mocks();
 }
 
 void test_buffer_pool_is_present() {
     setup_display_mocks();
     // Directly testing if the buffers in the pool can be written to.
     // This is a basic buffer safety check.
-    strncpy(mock_display_state.buffers.render_buffer, "test", sizeof(mock_display_state.buffers.render_buffer) - 1);
-    mock_display_state.buffers.render_buffer[sizeof(mock_display_state.buffers.render_buffer) - 1] = '\0';
+    strncpy(mock_display_state.buffers.render_buffer, "test", mock_viewer.config->max_field_len - 1);
+    mock_display_state.buffers.render_buffer[mock_viewer.config->max_field_len - 1] = '\0';
     TEST_ASSERT(strcmp(mock_display_state.buffers.render_buffer, "test") == 0, "Render buffer should be writable.");
+    teardown_display_mocks();
 }
 
 void test_field_rendering_simple() {
@@ -62,6 +78,7 @@ void test_field_rendering_simple() {
 
     TEST_ASSERT(strcmp(buffer, "hello") == 0, "Simple field should be rendered correctly.");
     TEST_ASSERT(strlen(buffer) == 5, "Simple field render length should be correct.");
+    teardown_display_mocks();
 }
 
 // --- Test Suite ---

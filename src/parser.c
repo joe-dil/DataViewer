@@ -1,6 +1,8 @@
 #include "viewer.h"
 #include "display_state.h"
 #include <wchar.h>
+#include <string.h>
+#include <stdlib.h>
 
 // --- Core Parsing Logic ---
 
@@ -21,13 +23,15 @@ static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_cou
 }
 
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
+    if (!viewer || !viewer->file_data || !viewer->file_data->data || offset >= viewer->file_data->length) {
+        return 0;
+    }
+
     // Cache frequently accessed variables from viewer->file_data to local variables.
     // This reduces pointer dereferencing overhead inside the loop.
     const char *data = viewer->file_data->data;
     const size_t length = viewer->file_data->length;
     const char delimiter = viewer->file_data->delimiter;
-
-    if (offset >= length) return 0;
 
     // Initialize the state machine for the parser.
     ParseState state = {
@@ -113,8 +117,12 @@ static void unquote_field(const FieldDesc *field, char *buffer, size_t buffer_si
     buffer[dst_pos] = '\0';
 }
 
-char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
-    // Now just a simple wrapper around the unquote helper
+void render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
+    if (!field || !field->start || !buffer || buffer_size == 0) {
+        if (buffer && buffer_size > 0) buffer[0] = '\0';
+        return;
+    }
+
     unquote_field(field, buffer, buffer_size);
     // Replace newlines with spaces for single-line display
     for(size_t i = 0; buffer[i] != '\0'; ++i) {
@@ -122,20 +130,23 @@ char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
             buffer[i] = ' ';
         }
     }
-    return buffer;
 }
 
-int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
-    if (!field || !field->start || field->length == 0) return 0;
-    
-    // Use buffer_one for unquoting
-    char *temp_buffer = viewer->display_state->buffers.render_buffer;
-    unquote_field(field, temp_buffer, MAX_FIELD_LEN);
+// This function is currently not used but might be useful for future optimizations
+// where we only need the width without the full rendered string.
+int get_field_display_width(const FieldDesc *field, const DSVConfig *config) {
+    if (!field || !field->start || field->length == 0) {
+        return 0;
+    }
 
-    // Use wide_buffer for width calculation
-    wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
-    mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
-    int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+    // This is a simplified version. A more robust implementation would handle this better.
+    // For now, assume a temporary buffer is sufficient.
+    char temp_buffer[1024]; // Simplified, should use a managed buffer
+    wchar_t wcs[1024];
 
-    return display_width < 0 ? strlen(temp_buffer) : display_width;
+    unquote_field(field, temp_buffer, 1024);
+
+    mbstowcs(wcs, temp_buffer, config->max_field_len);
+    int display_width = wcswidth(wcs, config->max_field_len);
+    return (display_width < 0) ? strlen(temp_buffer) : display_width;
 } 

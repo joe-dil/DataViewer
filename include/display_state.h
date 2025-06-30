@@ -6,8 +6,8 @@
 #include <locale.h>
 
 // General constants needed by structs defined below
-#define MAX_FIELD_LEN 1024
-#define BUFFER_POOL_SIZE 5
+//#define MAX_FIELD_LEN 1024
+//#define BUFFER_POOL_SIZE 5
 
 // Constants for default separator strings
 #define ASCII_SEPARATOR " | "
@@ -16,17 +16,18 @@
 // Enhanced BufferPool with metadata and validation
 typedef struct {
     // Named buffers for specific purposes
-    char render_buffer[MAX_FIELD_LEN];      // Primary field rendering
-    char pad_buffer[MAX_FIELD_LEN];         // Padding operations
-    char cache_buffer[MAX_FIELD_LEN];       // Cache lookups
-    char temp_buffer[MAX_FIELD_LEN];        // Temporary operations
-    char analysis_buffer[MAX_FIELD_LEN];    // Analysis computations
-    wchar_t wide_buffer[MAX_FIELD_LEN];     // Wide character support
+    char *render_buffer;      // Primary field rendering
+    char *pad_buffer;         // Padding operations
+    char *cache_buffer;       // Cache lookups
+    char *temp_buffer;        // Temporary operations
+    char *analysis_buffer;    // Analysis computations
+    wchar_t *wide_buffer;     // Wide character support
     
     // Metadata for buffer management
-    int buffer_sizes[BUFFER_POOL_SIZE];
-    int is_in_use[BUFFER_POOL_SIZE];
-    const char* buffer_names[BUFFER_POOL_SIZE];
+    int *buffer_sizes;
+    int *is_in_use;
+    const char** buffer_names;
+    int pool_size;
 } ManagedBufferPool;
 
 // Backward compatibility typedef

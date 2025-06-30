@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include "config.h"
 #include "viewer_core.h"
 #include "file_io.h"
 #include "analysis.h"
@@ -10,13 +11,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#define CACHE_THRESHOLD_LINES 500
-#define CACHE_THRESHOLD_COLS 20
+#include <locale.h>
 
 // --- Component Lifecycle Management ---
 
-DSVResult init_viewer_components(struct DSVViewer *viewer) {
+DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfig *config) {
+    viewer->config = config;
+
     viewer->display_state = malloc(sizeof(DisplayState));
     if (!viewer->display_state) {
         LOG_ERROR("Failed to allocate for DisplayState");
@@ -25,7 +26,11 @@ DSVResult init_viewer_components(struct DSVViewer *viewer) {
     memset(viewer->display_state, 0, sizeof(DisplayState));
     
     // Initialize buffer pool
-    init_buffer_pool(&viewer->display_state->buffers);
+    if (init_buffer_pool(&viewer->display_state->buffers, config) != DSV_OK) {
+        LOG_ERROR("Failed to initialize buffer pool");
+        free(viewer->display_state);
+        return DSV_ERROR_MEMORY;
+    }
 
     viewer->file_data = malloc(sizeof(FileAndParseData));
     if (!viewer->file_data) {
@@ -59,6 +64,7 @@ void cleanup_viewer(DSVViewer *viewer) {
     cleanup_viewer_resources(viewer);
 
     if (viewer->display_state) {
+        cleanup_buffer_pool(&viewer->display_state->buffers);
         if (viewer->display_state->col_widths) {
             free(viewer->display_state->col_widths);
             viewer->display_state->col_widths = NULL;
@@ -81,7 +87,8 @@ void cleanup_viewer_components(struct DSVViewer *viewer) {
 
 // --- Configuration Management ---
 
-void configure_viewer_settings(struct DSVViewer *viewer) {
+void configure_viewer_settings(struct DSVViewer *viewer, const DSVConfig *config) {
+    (void)config; // Suppress unused parameter warning
     viewer->display_state->show_header = 1;
 
     char *locale = setlocale(LC_CTYPE, NULL);
@@ -94,9 +101,9 @@ void configure_viewer_settings(struct DSVViewer *viewer) {
     }
 }
 
-void initialize_viewer_cache(struct DSVViewer *viewer) {
-    if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
-        if (init_cache_system((struct DSVViewer*)viewer) != DSV_OK) {
+void initialize_viewer_cache(struct DSVViewer *viewer, const DSVConfig *config) {
+    if (viewer->file_data->num_lines > (size_t)config->cache_threshold_lines || viewer->display_state->num_cols > (size_t)config->cache_threshold_cols) {
+        if (init_cache_system((struct DSVViewer*)viewer, config) != DSV_OK) {
             LOG_WARN("Failed to initialize cache. Continuing without it.");
         }
     }
@@ -104,14 +111,14 @@ void initialize_viewer_cache(struct DSVViewer *viewer) {
 
 // --- Main Initialization Function ---
 
-DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, const DSVConfig *config) {
     DSVResult res;
     double phase_time, total_time;
     total_time = get_time_ms();
 
     // Core components
     phase_time = get_time_ms();
-    res = init_viewer_components(viewer);
+    res = init_viewer_components(viewer, config);
     if (res != DSV_OK) return res;
     printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
 
@@ -121,17 +128,17 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
         LOG_ERROR("Failed to load file data.");
         return DSV_ERROR_FILE_IO;
     }
-    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter);
+    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter, config);
     printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
 
     // Data structures
     phase_time = get_time_ms();
-    viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    viewer->file_data->fields = malloc(config->max_cols * sizeof(FieldDesc));
     if (!viewer->file_data->fields) {
         LOG_ERROR("Failed to allocate for fields");
         return DSV_ERROR_MEMORY;
     }
-    if (scan_file_data(viewer) != 0) {
+    if (scan_file_data(viewer, config) != 0) {
         LOG_ERROR("Failed to scan file data.");
         return DSV_ERROR_PARSE;
     }
@@ -139,12 +146,12 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
 
     // Display features
     phase_time = get_time_ms();
-    if (analyze_columns_legacy(viewer) != 0) {
+    if (analyze_columns_legacy(viewer, config) != 0) {
         LOG_ERROR("Failed to analyze columns.");
         return DSV_ERROR_DISPLAY;
     }
-    configure_viewer_settings(viewer);
-    initialize_viewer_cache(viewer);
+    configure_viewer_settings(viewer, config);
+    initialize_viewer_cache(viewer, config);
     printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
 
     printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);

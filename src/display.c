@@ -3,7 +3,7 @@
 #include <string.h>
 
 // Draw header row with special formatting and padding
-static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
+static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
@@ -15,7 +15,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
     }
     
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, MAX_COLS);
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, config->max_cols);
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
@@ -32,7 +32,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
         }
         
         char *rendered_field = viewer->display_state->buffers.render_buffer;
-        render_field(&viewer->file_data->fields[col], rendered_field, MAX_FIELD_LEN);
+        render_field(&viewer->file_data->fields[col], rendered_field, config->max_field_len);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         
@@ -63,13 +63,13 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col) {
 }
 
 // Draw regular data row
-static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col) {
+static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
     
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], viewer->file_data->fields, MAX_COLS);
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], viewer->file_data->fields, config->max_cols);
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
@@ -77,7 +77,7 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
         
         char *rendered_field = viewer->display_state->buffers.render_buffer;
-        render_field(&viewer->file_data->fields[col], rendered_field, MAX_FIELD_LEN);
+        render_field(&viewer->file_data->fields[col], rendered_field, config->max_field_len);
         
         const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
         mvaddstr(y, x, display_string);
@@ -102,7 +102,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     
     if (viewer->display_state->show_header) {
         attron(COLOR_PAIR(1) | A_UNDERLINE);
-        draw_header_row(0, viewer, start_col);
+        draw_header_row(0, viewer, start_col, viewer->config);
         attroff(COLOR_PAIR(1) | A_UNDERLINE);
         screen_start_row = 1;
     }
@@ -111,7 +111,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
         size_t file_line = start_row + screen_row - (viewer->display_state->show_header ? 0 : screen_start_row);
         if (file_line >= viewer->file_data->num_lines) break;
 
-        draw_data_row(screen_row, viewer, file_line, start_col);
+        draw_data_row(screen_row, viewer, file_line, start_col, viewer->config);
     }
     
     // Use %zu for size_t types

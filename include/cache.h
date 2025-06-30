@@ -4,16 +4,18 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "error_context.h"
+#include "config.h"
 
 // Forward declare to avoid circular dependency
 struct DSVViewer;
 
 // --- Constants ---
-#define CACHE_SIZE 16384
-#define MAX_TRUNCATED_VERSIONS 8
-#define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
-#define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)
-#define INTERN_TABLE_SIZE 4096
+// These are now managed by the config system
+// #define CACHE_SIZE 16384
+// #define MAX_TRUNCATED_VERSIONS 8
+// #define CACHE_STRING_POOL_SIZE (1024 * 1024 * 4) // 4MB pool for strings
+// #define CACHE_ENTRY_POOL_SIZE (CACHE_SIZE * 2)
+// #define INTERN_TABLE_SIZE 4096
 
 // --- Structs ---
 
@@ -27,7 +29,7 @@ typedef struct TruncatedString {
 typedef struct DisplayCacheEntry {
     uint32_t hash;
     int display_width;
-    TruncatedString truncated[MAX_TRUNCATED_VERSIONS];
+    TruncatedString *truncated;
     int truncated_count;
     char *original_string;
     struct DisplayCacheEntry *next;
@@ -35,7 +37,7 @@ typedef struct DisplayCacheEntry {
 
 // The main cache hash table
 typedef struct DisplayCache {
-    DisplayCacheEntry *entries[CACHE_SIZE];
+    DisplayCacheEntry **entries;
 } DisplayCache;
 
 // A single entry in the string intern table's hash map
@@ -46,7 +48,7 @@ typedef struct StringInternEntry {
 
 // A hash-table-based string interning table
 typedef struct StringInternTable {
-    StringInternEntry *buckets[INTERN_TABLE_SIZE];
+    StringInternEntry **buckets;
 } StringInternTable;
 
 // The memory pool for the cache system
@@ -59,7 +61,7 @@ typedef struct CacheMemoryPool {
 
 
 // --- Public Function Declarations for the Cache Subsystem ---
-DSVResult init_cache_system(struct DSVViewer *viewer);
+DSVResult init_cache_system(struct DSVViewer *viewer, const DSVConfig *config);
 void cleanup_cache_system(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 

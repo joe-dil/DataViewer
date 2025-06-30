@@ -19,6 +19,8 @@
 #define LINE_CAPACITY_GROWTH_FACTOR 1.2
 #define DEFAULT_CHARS_PER_LINE 80
 
+static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config);
+
 // --- Validation Functions (Critical Fixes) ---
 
 int validate_file_bounds(struct DSVViewer *viewer) {
@@ -60,8 +62,8 @@ int handle_single_line_file(struct DSVViewer *viewer) {
 
 // --- Static Helper Functions ---
 
-size_t estimate_line_count(DSVViewer *viewer) {
-    const size_t sample_size = (viewer->file_data->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->file_data->length : LINE_ESTIMATION_SAMPLE_SIZE;
+static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config) {
+    const size_t sample_size = (viewer->file_data->length < (size_t)config->line_estimation_sample_size) ? viewer->file_data->length : (size_t)config->line_estimation_sample_size;
     if (sample_size == 0) return 1;
 
     int sample_lines = 0;
@@ -75,19 +77,19 @@ size_t estimate_line_count(DSVViewer *viewer) {
         search_start = newline + 1;
     }
 
-    if (sample_lines == 0) return (viewer->file_data->length / DEFAULT_CHARS_PER_LINE) + 1;
+    if (sample_lines == 0) return (viewer->file_data->length / config->default_chars_per_line) + 1;
     double avg_line_len = (double)sample_size / sample_lines;
     return (size_t)((viewer->file_data->length / avg_line_len) * LINE_CAPACITY_GROWTH_FACTOR) + 1;
 }
 
 // --- Public API Functions ---
 
-char detect_file_delimiter(const char *data, size_t length, char override_delimiter) {
+char detect_file_delimiter(const char *data, size_t length, char override_delimiter, const DSVConfig *config) {
     if (override_delimiter != 0) {
         return override_delimiter;
     }
     int comma_count = 0, tab_count = 0, pipe_count = 0;
-    size_t scan_len = (length < DELIMITER_DETECTION_SAMPLE_SIZE) ? length : DELIMITER_DETECTION_SAMPLE_SIZE;
+    size_t scan_len = (length < (size_t)config->delimiter_detection_sample_size) ? length : (size_t)config->delimiter_detection_sample_size;
     for (size_t i = 0; i < scan_len; i++) {
         if (data[i] == ',') comma_count++;
         else if (data[i] == '\t') tab_count++;
@@ -133,12 +135,12 @@ void cleanup_file_data(struct DSVViewer *viewer) {
     }
 }
 
-DSVResult scan_file_data(struct DSVViewer *viewer) {
+DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
     int empty_result = handle_empty_file(viewer);
     if (empty_result == 0) return DSV_OK;
     if (empty_result == -1) return DSV_ERROR_MEMORY;
 
-    viewer->file_data->capacity = estimate_line_count(viewer);
+    viewer->file_data->capacity = estimate_line_count(viewer, config);
     viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
     if (!viewer->file_data->line_offsets) {
         LOG_ERROR("Failed to allocate memory for line offsets");

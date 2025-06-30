@@ -3,27 +3,49 @@
 #include <locale.h>
 #include "logging.h"
 #include "error_context.h"
+#include "config.h"
 
 int main(int argc, char *argv[]) {
     init_logging(LOG_LEVEL_INFO, "-"); // Log to stderr
     
+    // Initialize locale before any other operations
+    setlocale(LC_ALL, "");
+
     if (argc < 2) {
-        LOG_ERROR("Usage: %s <filename> [-d <delimiter>]", argv[0]);
+        LOG_ERROR("Usage: %s <filename> [--config <config_file>] [-d <delimiter>]", argv[0]);
         return 1;
     }
 
     const char *filename = argv[1];
+    const char *config_filename = NULL;
     char delimiter = 0;
 
-    if (argc > 3 && strcmp(argv[2], "-d") == 0) {
-        delimiter = argv[3][0];
+    // --- Argument Parsing ---
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+            config_filename = argv[++i];
+        } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
+            delimiter = argv[++i][0];
+        }
     }
 
-    // Initialize locale before viewer initialization for proper Unicode detection
-    setlocale(LC_ALL, "");
-    
+    // --- Configuration Loading ---
+    DSVConfig config;
+    config_init_defaults(&config);
+    if (config_filename) {
+        if (config_load_from_file(&config, config_filename) != DSV_OK) {
+            LOG_WARN("Could not load config from '%s', using defaults.", config_filename);
+        }
+    }
+
+    if (config_validate(&config) != DSV_OK) {
+        LOG_ERROR("Configuration validation failed. Exiting.");
+        return 1;
+    }
+
+    // --- Viewer Initialization ---
     DSVViewer viewer = {0};
-    DSVResult result = init_viewer(&viewer, filename, delimiter);
+    DSVResult result = init_viewer(&viewer, filename, delimiter, &config);
     
     if (result != DSV_OK) {
         LOG_ERROR("Initialization failed: %s", dsv_result_to_string(result));

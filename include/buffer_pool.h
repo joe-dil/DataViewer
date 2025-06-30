@@ -3,14 +3,17 @@
 
 #include "display_state.h"
 #include "error_context.h"
+#include "config.h"
 
 // Buffer pool management functions
 
 /**
  * Initialize a ManagedBufferPool with proper metadata
  * @param pool A pointer to the ManagedBufferPool.
+ * @param config A pointer to the application configuration.
+ * @return DSV_OK on success, DSV_ERROR_MEMORY on failure.
  */
-void init_buffer_pool(ManagedBufferPool *pool);
+DSVResult init_buffer_pool(ManagedBufferPool *pool, const DSVConfig *config);
 
 /**
  * Acquire a buffer from the pool for a specific purpose
@@ -18,7 +21,7 @@ void init_buffer_pool(ManagedBufferPool *pool);
  * @param purpose A string describing the intended use.
  * @return A pointer to the buffer, or NULL if acquisition fails.
  */
-char* acquire_buffer(ManagedBufferPool *pool, const char* purpose);
+char* acquire_buffer(ManagedBufferPool *pool, const char *purpose);
 
 /**
  * Release a buffer back to the pool
@@ -26,6 +29,13 @@ char* acquire_buffer(ManagedBufferPool *pool, const char* purpose);
  * @param buffer A pointer to the buffer to release.
  */
 void release_buffer(ManagedBufferPool *pool, char* buffer);
+
+/**
+ * @brief Frees all memory associated with a ManagedBufferPool.
+ *
+ * @param pool A pointer to the ManagedBufferPool.
+ */
+void cleanup_buffer_pool(ManagedBufferPool *pool);
 
 /**
  * Reset all buffers in the pool to available state

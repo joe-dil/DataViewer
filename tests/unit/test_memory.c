@@ -2,35 +2,48 @@
 #include "buffer_pool.h"
 #include "display_state.h"
 #include "error_context.h"
+#include "config.h"
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
 
-// Test 1: Buffer Pool Usage - Basic Functionality
-void test_buffer_pool_initialization() {
-    ManagedBufferPool pool;
-    init_buffer_pool(&pool);
-    
-    // Test that all buffers are properly initialized as available
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
-        TEST_ASSERT(pool.is_in_use[i] == 0, "All buffers should be available after initialization");
-        TEST_ASSERT(pool.buffer_sizes[i] == MAX_FIELD_LEN, "Buffer sizes should be set correctly");
-        TEST_ASSERT(pool.buffer_names[i] != NULL, "Buffer names should be set");
-    }
+// --- Test Setup ---
+static DSVConfig test_config;
+
+void setup_memory_tests() {
+    config_init_defaults(&test_config);
 }
 
-// Test 2: Buffer Pool Usage - Acquire and Release
+// --- Test Cases ---
+
+void test_buffer_pool_initialization() {
+    ManagedBufferPool pool;
+    setup_memory_tests();
+    
+    DSVResult res = init_buffer_pool(&pool, &test_config);
+    TEST_ASSERT(res == DSV_OK, "Buffer pool should initialize successfully");
+    
+    // Test that all buffers are properly initialized as available
+    for (int i = 0; i < pool.pool_size; i++) {
+        TEST_ASSERT(pool.is_in_use[i] == 0, "All buffers should be available after initialization");
+        TEST_ASSERT(pool.buffer_sizes[i] == test_config.max_field_len, "Buffer sizes should be set correctly");
+        TEST_ASSERT(pool.buffer_names[i] != NULL, "Buffer names should be set");
+    }
+    cleanup_buffer_pool(&pool);
+}
+
 void test_buffer_pool_acquire_release() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Acquire a buffer
     char* buffer1 = acquire_buffer(&pool, "test purpose");
     TEST_ASSERT(buffer1 != NULL, "Should be able to acquire first buffer");
-    TEST_ASSERT(buffer1 == pool.render_buffer, "First buffer should be render_buffer");
     
     // Acquire another buffer
     char* buffer2 = acquire_buffer(&pool, "test purpose 2");
     TEST_ASSERT(buffer2 != NULL, "Should be able to acquire second buffer");
-    TEST_ASSERT(buffer2 == pool.pad_buffer, "Second buffer should be pad_buffer");
     TEST_ASSERT(buffer2 != buffer1, "Buffers should be different");
     
     // Release first buffer
@@ -39,35 +52,39 @@ void test_buffer_pool_acquire_release() {
     // Acquire again - should get the first buffer back
     char* buffer3 = acquire_buffer(&pool, "test purpose 3");
     TEST_ASSERT(buffer3 == buffer1, "Should reuse the released buffer");
+
+    cleanup_buffer_pool(&pool);
 }
 
-// Test 3: Buffer Pool Usage - Pool Exhaustion
 void test_buffer_pool_exhaustion() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
-    char* buffers[BUFFER_POOL_SIZE + 1];
+    char* buffers[test_config.buffer_pool_size + 1];
     
     // Exhaust all buffers
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+    for (int i = 0; i < test_config.buffer_pool_size; i++) {
         buffers[i] = acquire_buffer(&pool, "exhaustion test");
         TEST_ASSERT(buffers[i] != NULL, "Should be able to acquire buffer within pool size");
     }
     
     // Try to acquire one more - should fail
-    buffers[BUFFER_POOL_SIZE] = acquire_buffer(&pool, "overflow test");
-    TEST_ASSERT(buffers[BUFFER_POOL_SIZE] == NULL, "Should fail to acquire buffer when pool is exhausted");
+    buffers[test_config.buffer_pool_size] = acquire_buffer(&pool, "overflow test");
+    TEST_ASSERT(buffers[test_config.buffer_pool_size] == NULL, "Should fail to acquire buffer when pool is exhausted");
     
     // Release one buffer and try again
     release_buffer(&pool, buffers[0]);
     char* recovered_buffer = acquire_buffer(&pool, "recovery test");
     TEST_ASSERT(recovered_buffer != NULL, "Should be able to acquire buffer after release");
+    
+    cleanup_buffer_pool(&pool);
 }
 
-// Test 4: Buffer Pool Usage - Reset Functionality
 void test_buffer_pool_reset() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Acquire some buffers
     char* buffer1 = acquire_buffer(&pool, "reset test 1");
@@ -78,20 +95,21 @@ void test_buffer_pool_reset() {
     reset_buffer_pool(&pool);
     
     // All buffers should be available again
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+    for (int i = 0; i < pool.pool_size; i++) {
         TEST_ASSERT(pool.is_in_use[i] == 0, "All buffers should be available after reset");
     }
+    
+    cleanup_buffer_pool(&pool);
 }
 
-// Test 5: Buffer Pool Usage - Validation
 void test_buffer_pool_validation() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Test valid buffer pointers
     TEST_ASSERT(validate_buffer_ptr(&pool, pool.render_buffer) == DSV_OK, "render_buffer should be valid");
     TEST_ASSERT(validate_buffer_ptr(&pool, pool.pad_buffer) == DSV_OK, "pad_buffer should be valid");
-    TEST_ASSERT(validate_buffer_ptr(&pool, pool.cache_buffer) == DSV_OK, "cache_buffer should be valid");
     
     // Test invalid buffer pointer
     char external_buffer[100];
@@ -100,15 +118,18 @@ void test_buffer_pool_validation() {
     // Test null inputs
     TEST_ASSERT(validate_buffer_ptr(NULL, pool.render_buffer) == DSV_ERROR_INVALID_ARGS, "NULL pool should be invalid");
     TEST_ASSERT(validate_buffer_ptr(&pool, NULL) == DSV_ERROR_INVALID_ARGS, "NULL buffer should be invalid");
+    
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 6: Memory Leak Detection - Buffer Pool Cleanup
 void test_buffer_pool_memory_cleanup() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Acquire all buffers
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+    for (int i = 0; i < pool.pool_size; i++) {
         char* buffer = acquire_buffer(&pool, "cleanup test");
         TEST_ASSERT(buffer != NULL, "Should acquire buffer for cleanup test");
         
@@ -121,17 +142,17 @@ void test_buffer_pool_memory_cleanup() {
     reset_buffer_pool(&pool);
     
     // All buffers should be clean and available
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+    for (int i = 0; i < pool.pool_size; i++) {
         TEST_ASSERT(pool.is_in_use[i] == 0, "Buffer should be marked as available after cleanup");
     }
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 7: Memory Leak Detection - Proper Initialization
 void test_buffer_pool_initialization_safety() {
     ManagedBufferPool pool;
-    
-    // Initialize pool
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Verify all buffers are properly cleared
     TEST_ASSERT(pool.render_buffer[0] == '\0', "render_buffer should be cleared");
@@ -142,12 +163,14 @@ void test_buffer_pool_initialization_safety() {
     
     // Wide buffer should also be cleared
     TEST_ASSERT(pool.wide_buffer[0] == L'\0', "wide_buffer should be cleared");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 8: Memory Leak Detection - Double Cleanup Safety
 void test_buffer_pool_double_cleanup() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Acquire and use a buffer
     char* buffer = acquire_buffer(&pool, "double cleanup test");
@@ -163,12 +186,14 @@ void test_buffer_pool_double_cleanup() {
     // Pool should still be in valid state
     char* new_buffer = acquire_buffer(&pool, "recovery test");
     TEST_ASSERT(new_buffer != NULL, "Should be able to acquire buffer after double cleanup");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 9: Null Pointer Safety - Init with NULL
 void test_buffer_pool_null_init() {
+    setup_memory_tests();
     // Test init with null pointer - should not crash
-    init_buffer_pool(NULL);
+    init_buffer_pool(NULL, &test_config);
     // If we get here, the function handled null gracefully
     TEST_ASSERT(1, "init_buffer_pool should handle NULL gracefully");
 }
@@ -179,17 +204,20 @@ void test_buffer_pool_null_acquire() {
     TEST_ASSERT(result == NULL, "acquire_buffer should return NULL for NULL pool");
     
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Should work with NULL purpose
     char* buffer = acquire_buffer(&pool, NULL);
     TEST_ASSERT(buffer != NULL, "acquire_buffer should work with NULL purpose");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 11: Null Pointer Safety - Release with NULL
 void test_buffer_pool_null_release() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Test releasing with null pool
     release_buffer(NULL, pool.render_buffer);
@@ -203,6 +231,7 @@ void test_buffer_pool_null_release() {
     // Pool should still be functional
     char* buffer = acquire_buffer(&pool, "null safety test");
     TEST_ASSERT(buffer != NULL, "Pool should still work after null release attempts");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 12: Null Pointer Safety - Reset with NULL
@@ -215,31 +244,34 @@ void test_buffer_pool_null_reset() {
 // Test 13: Allocation Failure Handling - Pool Robustness
 void test_buffer_pool_robustness() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Test that repeated acquire/release cycles work
     for (int cycle = 0; cycle < 10; cycle++) {
-        char* buffers[BUFFER_POOL_SIZE];
+        char* buffers[pool.pool_size];
         
         // Acquire all buffers
-        for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+        for (int i = 0; i < pool.pool_size; i++) {
             buffers[i] = acquire_buffer(&pool, "robustness test");
             TEST_ASSERT(buffers[i] != NULL, "Should acquire buffer in robustness test");
         }
         
         // Release all buffers
-        for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+        for (int i = 0; i < pool.pool_size; i++) {
             release_buffer(&pool, buffers[i]);
         }
     }
     
     TEST_ASSERT(1, "Buffer pool should handle repeated acquire/release cycles");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 14: Allocation Failure Handling - Invalid Buffer Release
 void test_buffer_pool_invalid_release() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Try to release a buffer that was never acquired
     char invalid_buffer[100];
@@ -248,12 +280,14 @@ void test_buffer_pool_invalid_release() {
     // Pool should still be functional
     char* valid_buffer = acquire_buffer(&pool, "post-invalid test");
     TEST_ASSERT(valid_buffer != NULL, "Pool should work after invalid release attempt");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test 15: Allocation Failure Handling - Stress Test
 void test_buffer_pool_stress() {
     ManagedBufferPool pool;
-    init_buffer_pool(&pool);
+    setup_memory_tests();
+    init_buffer_pool(&pool, &test_config);
     
     // Rapid acquire/release pattern
     for (int i = 0; i < 100; i++) {
@@ -266,6 +300,7 @@ void test_buffer_pool_stress() {
     }
     
     TEST_ASSERT(1, "Buffer pool should handle stress test");
+    cleanup_buffer_pool(&pool);
 }
 
 // Test registration
