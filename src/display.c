@@ -3,6 +3,25 @@
 #include <wchar.h>
 #include <string.h>
 
+// Simple helper: get column width with fallback
+static int get_column_width(DSVViewer *viewer, size_t col) {
+    return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
+}
+
+// Simple helper: render field content (common to both header and data)
+static const char* render_column_content(DSVViewer *viewer, size_t col, int display_width) {
+    char *rendered_field = viewer->display_state->buffers.render_buffer;
+    render_field(&viewer->file_data->fields[col], rendered_field, viewer->config->max_field_len);
+    return get_truncated_string(viewer, rendered_field, display_width);
+}
+
+// Simple helper: add separator if conditions are met
+static void add_separator_if_needed(DSVViewer *viewer, int y, int x, size_t col, size_t num_fields, int cols) {
+    if (col < num_fields - 1 && x + 3 <= cols) {
+        mvaddstr(y, x, viewer->display_state->separator);
+    }
+}
+
 // Draw header row with special formatting and padding
 static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
     int rows, cols;
@@ -21,10 +40,10 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
+        int col_width = get_column_width(viewer, col);
         int original_col_width = col_width;
         
-        // Header truncation logic
+        // Header truncation logic (keep as-is, it works!)
         int separator_space = (col < num_fields - 1) ? 3 : 0;
         int needed_space = col_width + separator_space;
         if (x + needed_space > cols) {
@@ -32,24 +51,20 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
             if (col_width <= 0) break;
         }
         
-        char *rendered_field = viewer->display_state->buffers.render_buffer;
-        render_field(&viewer->file_data->fields[col], rendered_field, config->max_field_len);
+        const char *display_string = render_column_content(viewer, col, col_width);
         
-        const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
-        
+        // Simplified padding logic for headers
         if (col_width < original_col_width) {
-            // Pad truncated header fields with spaces
-            int text_len = strlen(display_string);
+            // Only pad when truncated (existing behavior)
             char *padded_field = viewer->display_state->buffers.pad_buffer;
-            // Safe bounded copy instead of strcpy
-            strncpy(padded_field, display_string, config->max_field_len - 1);
-            padded_field[config->max_field_len - 1] = '\0'; // Ensure null termination
-            // Ensure we don't exceed buffer bounds for padding
-            int safe_col_width = (col_width < config->max_field_len) ? col_width : config->max_field_len - 1;
-            if (text_len < safe_col_width) {
-                memset(padded_field + text_len, ' ', safe_col_width - text_len);
+            int text_len = strlen(display_string);
+            int pad_width = (col_width < viewer->config->max_field_len) ? col_width : viewer->config->max_field_len - 1;
+            
+            strncpy(padded_field, display_string, pad_width);
+            if (text_len < pad_width) {
+                memset(padded_field + text_len, ' ', pad_width - text_len);
             }
-            padded_field[safe_col_width] = '\0';
+            padded_field[pad_width] = '\0';
             mvaddstr(y, x, padded_field);
         } else {
             mvaddstr(y, x, display_string);
@@ -69,7 +84,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     }
 }
 
-// Draw regular data row
+// Draw regular data row (keep simple, it works!)
 static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -81,19 +96,14 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
+        int col_width = get_column_width(viewer, col);
         
-        char *rendered_field = viewer->display_state->buffers.render_buffer;
-        render_field(&viewer->file_data->fields[col], rendered_field, config->max_field_len);
-        
-        const char *display_string = get_truncated_string(viewer, rendered_field, col_width);
+        const char *display_string = render_column_content(viewer, col, col_width);
         mvaddstr(y, x, display_string);
         x += col_width;
         
-        // Add separator if not last column and space available
-        if (col < num_fields - 1 && x + 3 <= cols) {
-            mvaddstr(y, x, viewer->display_state->separator);
-        }
+        // Add separator if not last column and space available  
+        add_separator_if_needed(viewer, y, x, col, num_fields, cols);
         x += 3;
     }
 }
