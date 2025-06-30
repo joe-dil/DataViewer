@@ -9,7 +9,7 @@
 // Forward declarations
 struct DSVViewer;
 
-// Analysis results structure - FIXES IMPLICIT DEPENDENCIES
+// Analysis results structure (currently unused, but kept for future extensions)
 typedef struct {
     int *col_widths;           // Column width array
     size_t num_cols;           // Number of columns
@@ -17,17 +17,10 @@ typedef struct {
     size_t total_fields;       // Total fields analyzed
 } ColumnAnalysis;
 
-// Explicit interface functions - NO MORE HIDDEN DEPENDENCIES
-int analyze_column_widths(const char *data, size_t length,
-                         const size_t *line_offsets, size_t num_lines,
-                         char delimiter, ColumnAnalysis *result, const DSVConfig *config);
-
-// Helper functions with explicit parameters
-int calculate_field_width(const char *field_start, size_t field_length,
-                         int needs_unescaping);
+// Clean up analysis results
 void cleanup_column_analysis(ColumnAnalysis *analysis);
 
-// Legacy wrapper for compatibility
+// Analyze column widths and store them in viewer->display_state
 int analyze_columns_legacy(struct DSVViewer *viewer, const DSVConfig *config);
 
 #endif // ANALYSIS_H 
