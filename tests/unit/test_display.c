@@ -43,9 +43,9 @@ void test_buffer_pool_is_present() {
     setup_display_mocks();
     // Directly testing if the buffers in the pool can be written to.
     // This is a basic buffer safety check.
-    strncpy(mock_display_state.buffers.buffer_one, "test", sizeof(mock_display_state.buffers.buffer_one) - 1);
-    mock_display_state.buffers.buffer_one[sizeof(mock_display_state.buffers.buffer_one) - 1] = '\0';
-    TEST_ASSERT(strcmp(mock_display_state.buffers.buffer_one, "test") == 0, "Buffer one should be writable.");
+    strncpy(mock_display_state.buffers.render_buffer, "test", sizeof(mock_display_state.buffers.render_buffer) - 1);
+    mock_display_state.buffers.render_buffer[sizeof(mock_display_state.buffers.render_buffer) - 1] = '\0';
+    TEST_ASSERT(strcmp(mock_display_state.buffers.render_buffer, "test") == 0, "Render buffer should be writable.");
 }
 
 void test_field_rendering_simple() {

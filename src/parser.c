@@ -129,7 +129,7 @@ int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
     if (!field || !field->start || field->length == 0) return 0;
     
     // Use buffer_one for unquoting
-    char *temp_buffer = viewer->display_state->buffers.buffer_one;
+    char *temp_buffer = viewer->display_state->buffers.render_buffer;
     unquote_field(field, temp_buffer, MAX_FIELD_LEN);
 
     // Use wide_buffer for width calculation

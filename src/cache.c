@@ -60,9 +60,16 @@ static int init_cache_memory_pool(struct DSVViewer *viewer) {
 
 static void cleanup_cache_memory_pool(struct DSVViewer *viewer) {
     if (!viewer->mem_pool) return;
-    free(viewer->mem_pool->entry_pool);
-    free(viewer->mem_pool->string_pool);
+    if (viewer->mem_pool->entry_pool) {
+        free(viewer->mem_pool->entry_pool);
+        viewer->mem_pool->entry_pool = NULL;
+    }
+    if (viewer->mem_pool->string_pool) {
+        free(viewer->mem_pool->string_pool);
+        viewer->mem_pool->string_pool = NULL;
+    }
     free(viewer->mem_pool);
+    viewer->mem_pool = NULL;
 }
 
 // --- String Interning ---
@@ -104,8 +111,10 @@ static void cleanup_string_intern_table(struct DSVViewer *viewer) {
             free(entry); // Note: string is freed by memory pool
             entry = next;
         }
+        viewer->intern_table->buckets[i] = NULL;
     }
     free(viewer->intern_table);
+    viewer->intern_table = NULL;
 }
 
 // --- Display Cache ---
@@ -143,7 +152,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
             for (int i = 0; i < entry->truncated_count; i++) {
                 if (entry->truncated[i].width == width) return entry->truncated[i].str;
             }
-            char *truncated_buffer = viewer->display_state->buffers.buffer_three;
+            char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
             truncate_str(viewer, original, truncated_buffer, width);
             if (entry->truncated_count < MAX_TRUNCATED_VERSIONS) {
                 int i = entry->truncated_count++;
@@ -159,7 +168,7 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
     DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
     if (!new_entry) return original; // Pool full
         
-    char *truncated_buffer = viewer->display_state->buffers.buffer_three;
+    char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
     truncate_str(viewer, original, truncated_buffer, width);
 
     new_entry->hash = hash;
@@ -183,6 +192,7 @@ static int init_display_cache(struct DSVViewer *viewer) {
 static void cleanup_display_cache(struct DSVViewer *viewer) {
     if (!viewer->display_cache) return;
     free(viewer->display_cache);
+    viewer->display_cache = NULL;
 }
 
 // --- Public-Facing System Functions ---

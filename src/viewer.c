@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "logging.h"
 #include "error_context.h"
+#include "buffer_pool.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -22,6 +23,9 @@ DSVResult init_viewer_components(struct DSVViewer *viewer) {
         return DSV_ERROR_MEMORY;
     }
     memset(viewer->display_state, 0, sizeof(DisplayState));
+    
+    // Initialize buffer pool
+    init_buffer_pool(&viewer->display_state->buffers);
 
     viewer->file_data = malloc(sizeof(FileAndParseData));
     if (!viewer->file_data) {
@@ -57,12 +61,15 @@ void cleanup_viewer(DSVViewer *viewer) {
     if (viewer->display_state) {
         if (viewer->display_state->col_widths) {
             free(viewer->display_state->col_widths);
+            viewer->display_state->col_widths = NULL;
         }
         free(viewer->display_state);
+        viewer->display_state = NULL;
     }
 
     if (viewer->file_data) {
         free(viewer->file_data);
+        viewer->file_data = NULL;
     }
 }
 
