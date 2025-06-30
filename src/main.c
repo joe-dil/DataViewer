@@ -1,5 +1,6 @@
 #include "viewer.h"
 #include <string.h>
+#include <locale.h>
 #include "logging.h"
 #include "error_context.h"
 
@@ -18,6 +19,9 @@ int main(int argc, char *argv[]) {
         delimiter = argv[3][0];
     }
 
+    // Initialize locale before viewer initialization for proper Unicode detection
+    setlocale(LC_ALL, "");
+    
     DSVViewer viewer = {0};
     DSVResult result = init_viewer(&viewer, filename, delimiter);
     
@@ -28,7 +32,6 @@ int main(int argc, char *argv[]) {
     }
 
 #ifndef TEST_BUILD
-    setlocale(LC_ALL, "");
     initscr();
     start_color();
     init_pair(1, COLOR_YELLOW, COLOR_BLACK);
