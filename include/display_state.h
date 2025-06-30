@@ -5,10 +5,6 @@
 #include <wchar.h>
 #include <locale.h>
 
-// General constants needed by structs defined below
-//#define MAX_FIELD_LEN 1024
-//#define BUFFER_POOL_SIZE 5
-
 // Constants for default separator strings
 #define ASCII_SEPARATOR " | "
 #define UNICODE_SEPARATOR " │ "

@@ -132,21 +132,4 @@ void render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
     }
 }
 
-// This function is currently not used but might be useful for future optimizations
-// where we only need the width without the full rendered string.
-int get_field_display_width(const FieldDesc *field, const DSVConfig *config) {
-    if (!field || !field->start || field->length == 0) {
-        return 0;
-    }
-
-    // This is a simplified version. A more robust implementation would handle this better.
-    // For now, assume a temporary buffer is sufficient.
-    char temp_buffer[1024]; // Simplified, should use a managed buffer
-    wchar_t wcs[1024];
-
-    unquote_field(field, temp_buffer, 1024);
-
-    mbstowcs(wcs, temp_buffer, config->max_field_len);
-    int display_width = wcswidth(wcs, config->max_field_len);
-    return (display_width < 0) ? strlen(temp_buffer) : display_width;
-} 
+ 

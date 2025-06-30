@@ -1,6 +1,6 @@
 #include "viewer.h"
 #include "file_io.h"
-#include "display_state.h" // For DELIMITER_DETECTION_SAMPLE_SIZE etc. - this should be moved later
+#include "display_state.h"
 #include "file_and_parse_data.h"
 #include "logging.h"
 #include "error_context.h"
@@ -14,10 +14,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define DELIMITER_DETECTION_SAMPLE_SIZE 1024
-#define LINE_ESTIMATION_SAMPLE_SIZE 4096
 #define LINE_CAPACITY_GROWTH_FACTOR 1.2
-#define DEFAULT_CHARS_PER_LINE 80
 
 static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config);
 
@@ -49,12 +46,11 @@ int handle_empty_file(struct DSVViewer *viewer) {
     return 1; // Not empty
 }
 
-// Placeholder for single line file handling
+// Handle single line files - basic implementation
 int handle_single_line_file(struct DSVViewer *viewer) {
-    // TODO: Implement specific logic for single-line files if needed.
-    // For now, it is handled by the normal scanning process.
+    // Single-line files are handled by the normal scanning process
     if (viewer->file_data->num_lines == 1) {
-        // Potentially set different display defaults or analysis paths
+        // Single line files work correctly with existing logic
     }
     return 0;
 }

@@ -39,7 +39,7 @@ typedef struct DSVViewer {
 
 // Core application function declarations
 
-// Parser functions (parser.c)
+// Core viewer functions (viewer.c)
 DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, const DSVConfig *config);
 void cleanup_viewer(DSVViewer *viewer);
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);

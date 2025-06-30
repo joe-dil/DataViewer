@@ -119,7 +119,7 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
 
     // File operations
     phase_time = get_time_ms();
-    if (load_file_data(viewer, filename) != 0) {
+    if (load_file_data(viewer, filename) != DSV_OK) {
         LOG_ERROR("Failed to load file data.");
         return DSV_ERROR_FILE_IO;
     }
@@ -133,7 +133,7 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
         LOG_ERROR("Failed to allocate for fields");
         return DSV_ERROR_MEMORY;
     }
-    if (scan_file_data(viewer, config) != 0) {
+    if (scan_file_data(viewer, config) != DSV_OK) {
         LOG_ERROR("Failed to scan file data.");
         return DSV_ERROR_PARSE;
     }

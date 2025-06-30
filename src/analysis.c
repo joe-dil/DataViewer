@@ -6,12 +6,6 @@
 #include <string.h>
 #include <wchar.h>
 
-#define MAX_COLS 256
-#define COLUMN_ANALYSIS_SAMPLE_LINES 1000
-#define MAX_COLUMN_WIDTH 16
-#define MIN_COLUMN_WIDTH 4
-#define MAX_FIELD_LEN 1024
-
 // --- Forward declarations for static helpers ---
 // NEW: Optimized function that eliminates duplicate parsing
 static int analyze_column_widths_optimized(DSVViewer *viewer, ColumnAnalysis *result, const DSVConfig *config);
@@ -85,8 +79,8 @@ static int analyze_column_widths_optimized(DSVViewer *viewer, ColumnAnalysis *re
             if (col_widths_tmp[col] >= config->max_column_width) continue;
             
             // Use the main render_field + width calculation instead of duplicate logic
-            char temp_buffer[1024];
-            render_field(&analysis_fields[col], temp_buffer, sizeof(temp_buffer));
+            char temp_buffer[config->max_field_len];
+            render_field(&analysis_fields[col], temp_buffer, config->max_field_len);
             int width = strlen(temp_buffer); // Simplified width calculation for now
             
             if (width > col_widths_tmp[col]) {
