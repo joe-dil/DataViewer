@@ -28,9 +28,14 @@ int main(int argc, char *argv[]) {
     }
 
 #ifndef TEST_BUILD
+    setlocale(LC_ALL, "");
     initscr();
     start_color();
     init_pair(1, COLOR_YELLOW, COLOR_BLACK);
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    curs_set(0);
 #endif
     
     run_viewer(&viewer);
