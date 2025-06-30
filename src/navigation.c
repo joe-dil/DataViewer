@@ -1,5 +1,6 @@
 #include "viewer.h"
 #include <ncurses.h>
+#include <stdbool.h>
 #include "display_state.h"
 
 // Explicit redraw control enum - FIXES ALL REDRAW ISSUES
@@ -37,9 +38,30 @@ static InputResult handle_input_with_redraw_control(int ch, struct DSVViewer *vi
             }
             break;
         case KEY_RIGHT:
-            // Ensure we don't scroll past the last column that can be displayed
+            // Don't scroll if no columns would be visible from next position
             if (*start_col < viewer->display_state->num_cols - 1) {
-                (*start_col)++;
+                // Quick check: would any columns be visible from next position?
+                int rows, cols;
+                getmaxyx(stdscr, rows, cols);
+                (void)rows;
+                
+                size_t next_start = *start_col + 1;
+                int x = 0;
+                bool would_show_columns = false;
+                
+                // Check if any columns from next_start would fit on screen
+                for (size_t col = next_start; col < viewer->display_state->num_cols; col++) {
+                    int col_width = viewer->display_state->col_widths[col];
+                    if (x + col_width <= cols) {
+                        would_show_columns = true;
+                        break;
+                    }
+                    x += col_width + 3;
+                }
+                
+                if (would_show_columns) {
+                    (*start_col)++;
+                }
             }
             break;
         case KEY_PPAGE:

@@ -28,15 +28,38 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
     
-    // Clear the entire header line
+    // Clear the line first
     move(y, 0);
-    for (int i = 0; i < cols; i++) {
+    clrtoeol();
+    
+    // Calculate total width needed for all visible columns
+    int total_width = 0;
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, config->max_cols);
+    
+    for (size_t col = start_col; col < num_fields; col++) {
+        int col_width = get_column_width(viewer, col);
+        int separator_space = (col < num_fields - 1) ? 3 : 0;
+        int needed_space = col_width + separator_space;
+        
+        if (total_width + needed_space > cols) {
+            // If this column would extend past screen, truncate
+            col_width = cols - total_width - separator_space;
+            if (col_width <= 0) break;
+            total_width += col_width;
+            break;
+        } else {
+            total_width += needed_space;
+        }
+    }
+    
+    // Fill only the needed width with spaces for continuous underline
+    move(y, 0);
+    for (int i = 0; i < total_width && i < cols; i++) {
         addch(' ');
     }
     
+    // Now render columns over the spaces
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, config->max_cols);
-    
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
