@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "logging.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -24,8 +25,7 @@ void log_total_timing(const char *operation, double total_time) {
 void* safe_malloc(size_t size, const char *context) {
     void *ptr = malloc(size);
     if (!ptr) {
-        fprintf(stderr, "ERROR: Failed to allocate %zu bytes for %s\n", size, context);
-        // In a real application, this might exit or trigger a more robust error handler
+        LOG_ERROR("Failed to allocate %zu bytes for %s", size, context);
     }
     return ptr;
 }
@@ -33,7 +33,7 @@ void* safe_malloc(size_t size, const char *context) {
 void* safe_realloc(void *ptr, size_t size, const char *context) {
     void *new_ptr = realloc(ptr, size);
     if (!new_ptr && size > 0) {
-        fprintf(stderr, "ERROR: Failed to reallocate %zu bytes for %s\n", size, context);
+        LOG_ERROR("Failed to reallocate %zu bytes for %s", size, context);
     }
     return new_ptr;
 } 

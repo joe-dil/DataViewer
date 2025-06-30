@@ -2,6 +2,8 @@
 #include "file_io.h"
 #include "display_state.h" // For DELIMITER_DETECTION_SAMPLE_SIZE etc. - this should be moved later
 #include "file_and_parse_data.h"
+#include "logging.h"
+#include "error_context.h"
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -10,9 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #define DELIMITER_DETECTION_SAMPLE_SIZE 1024
-#define LINE_ESTIMATION_SAMPLE_SIZE 65536
+#define LINE_ESTIMATION_SAMPLE_SIZE 4096
 #define LINE_CAPACITY_GROWTH_FACTOR 1.2
 #define DEFAULT_CHARS_PER_LINE 80
 
@@ -57,7 +60,7 @@ int handle_single_line_file(struct DSVViewer *viewer) {
 
 // --- Static Helper Functions ---
 
-static size_t estimate_line_count(DSVViewer *viewer) {
+size_t estimate_line_count(DSVViewer *viewer) {
     const size_t sample_size = (viewer->file_data->length < LINE_ESTIMATION_SAMPLE_SIZE) ? viewer->file_data->length : LINE_ESTIMATION_SAMPLE_SIZE;
     if (sample_size == 0) return 1;
 
@@ -95,19 +98,30 @@ char detect_file_delimiter(const char *data, size_t length, char override_delimi
     return ',';
 }
 
-int load_file_data(struct DSVViewer *viewer, const char *filename) {
+DSVResult load_file_data(struct DSVViewer *viewer, const char *filename) {
     struct stat st;
     viewer->file_data->fd = open(filename, O_RDONLY);
-    if (viewer->file_data->fd == -1) { perror("Failed to open file"); return -1; }
-    if (fstat(viewer->file_data->fd, &st) == -1) { perror("Failed to get file stats"); close(viewer->file_data->fd); return -1; }
+    if (viewer->file_data->fd == -1) {
+        LOG_ERROR("Failed to open file '%s': %s", filename, strerror(errno));
+        return DSV_ERROR_FILE_IO;
+    }
+    if (fstat(viewer->file_data->fd, &st) == -1) {
+        LOG_ERROR("Failed to stat file '%s': %s", filename, strerror(errno));
+        close(viewer->file_data->fd);
+        return DSV_ERROR_FILE_IO;
+    }
     viewer->file_data->length = st.st_size;
     if (viewer->file_data->length > 0) {
         viewer->file_data->data = mmap(NULL, viewer->file_data->length, PROT_READ, MAP_PRIVATE, viewer->file_data->fd, 0);
-        if (viewer->file_data->data == MAP_FAILED) { perror("Failed to map file"); close(viewer->file_data->fd); return -1; }
+        if (viewer->file_data->data == MAP_FAILED) {
+            LOG_ERROR("Failed to mmap file '%s': %s", filename, strerror(errno));
+            close(viewer->file_data->fd);
+            return DSV_ERROR_FILE_IO;
+        }
     } else {
-        viewer->file_data->data = NULL; // No mapping for empty file
+        viewer->file_data->data = NULL;
     }
-    return 0;
+    return DSV_OK;
 }
 
 void cleanup_file_data(struct DSVViewer *viewer) {
@@ -119,16 +133,16 @@ void cleanup_file_data(struct DSVViewer *viewer) {
     }
 }
 
-int scan_file_data(struct DSVViewer *viewer) {
+DSVResult scan_file_data(struct DSVViewer *viewer) {
     int empty_result = handle_empty_file(viewer);
-    if (empty_result == 0) return 0; // Empty file handled, minimal state created.
-    if (empty_result == -1) return -1; // Error allocating for empty file.
+    if (empty_result == 0) return DSV_OK;
+    if (empty_result == -1) return DSV_ERROR_MEMORY;
 
     viewer->file_data->capacity = estimate_line_count(viewer);
     viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
     if (!viewer->file_data->line_offsets) {
-        fprintf(stderr, "Failed to allocate memory for line offsets\n");
-        return -1;
+        LOG_ERROR("Failed to allocate memory for line offsets");
+        return DSV_ERROR_MEMORY;
     }
 
     viewer->file_data->num_lines = 0;
@@ -142,36 +156,26 @@ int scan_file_data(struct DSVViewer *viewer) {
         if (!newline) break;
 
         if (viewer->file_data->num_lines >= viewer->file_data->capacity) {
-            viewer->file_data->capacity *= 2;
-            size_t *new_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->capacity * sizeof(size_t));
+            size_t new_capacity = viewer->file_data->capacity * 2;
+            size_t *new_offsets = realloc(viewer->file_data->line_offsets, new_capacity * sizeof(size_t));
             if (!new_offsets) {
-                fprintf(stderr, "Failed to expand line offsets array\n");
-                return -1;
+                LOG_ERROR("Failed to expand line offsets array");
+                return DSV_ERROR_MEMORY;
             }
             viewer->file_data->line_offsets = new_offsets;
+            viewer->file_data->capacity = new_capacity;
         }
 
         size_t next_line_offset = (newline - viewer->file_data->data) + 1;
         if (next_line_offset < viewer->file_data->length) {
             viewer->file_data->line_offsets[viewer->file_data->num_lines++] = next_line_offset;
         }
-
         search_start = newline + 1;
     }
-
-    // Add bounds validation after scanning
-    if (validate_file_bounds(viewer) == -1) {
-        return -1; // Allocation error in validation
-    }
     
-    if (viewer->file_data->capacity > viewer->file_data->num_lines) {
-        size_t *trimmed_offsets = realloc(viewer->file_data->line_offsets, viewer->file_data->num_lines * sizeof(size_t));
-        if (trimmed_offsets) {
-            viewer->file_data->line_offsets = trimmed_offsets;
-        }
-    }
-    
+    // Final memory and bounds checks
+    if (validate_file_bounds(viewer) == -1) return DSV_ERROR_PARSE;
     handle_single_line_file(viewer);
-
-    return 0;
+    
+    return DSV_OK;
 } 

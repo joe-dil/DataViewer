@@ -3,6 +3,8 @@
 #include "file_io.h"
 #include "analysis.h"
 #include "utils.h"
+#include "logging.h"
+#include "error_context.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -13,22 +15,22 @@
 
 // --- Component Lifecycle Management ---
 
-int init_viewer_components(struct DSVViewer *viewer) {
+DSVResult init_viewer_components(struct DSVViewer *viewer) {
     viewer->display_state = malloc(sizeof(DisplayState));
     if (!viewer->display_state) {
-        perror("Failed to allocate for DisplayState");
-        return -1;
+        LOG_ERROR("Failed to allocate for DisplayState");
+        return DSV_ERROR_MEMORY;
     }
     memset(viewer->display_state, 0, sizeof(DisplayState));
 
     viewer->file_data = malloc(sizeof(FileAndParseData));
     if (!viewer->file_data) {
-        perror("Failed to allocate for FileAndParseData");
-        free(viewer->display_state); // Clean up already allocated part
-        return -1;
+        LOG_ERROR("Failed to allocate for FileAndParseData");
+        free(viewer->display_state);
+        return DSV_ERROR_MEMORY;
     }
     memset(viewer->file_data, 0, sizeof(FileAndParseData));
-    return 0;
+    return DSV_OK;
 }
 
 void cleanup_viewer_resources(struct DSVViewer *viewer) {
@@ -87,26 +89,31 @@ void configure_viewer_settings(struct DSVViewer *viewer) {
 
 void initialize_viewer_cache(struct DSVViewer *viewer) {
     if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
-        if (init_cache_system((struct DSVViewer*)viewer) != 0) {
-            fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
+        if (init_cache_system((struct DSVViewer*)viewer) != DSV_OK) {
+            LOG_WARN("Failed to initialize cache. Continuing without it.");
         }
     }
 }
 
 // --- Main Initialization Function ---
 
-int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+    DSVResult res;
     double phase_time, total_time;
     total_time = get_time_ms();
 
     // Core components
     phase_time = get_time_ms();
-    if (init_viewer_components(viewer) != 0) goto cleanup;
+    res = init_viewer_components(viewer);
+    if (res != DSV_OK) return res;
     printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
 
     // File operations
     phase_time = get_time_ms();
-    if (load_file_data(viewer, filename) != 0) goto cleanup;
+    if (load_file_data(viewer, filename) != 0) {
+        LOG_ERROR("Failed to load file data.");
+        return DSV_ERROR_FILE_IO;
+    }
     viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter);
     printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
 
@@ -114,23 +121,26 @@ int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     phase_time = get_time_ms();
     viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
     if (!viewer->file_data->fields) {
-        fprintf(stderr, "Failed to allocate for fields\n");
-        goto cleanup;
+        LOG_ERROR("Failed to allocate for fields");
+        return DSV_ERROR_MEMORY;
     }
-    if (scan_file_data(viewer) != 0) goto cleanup;
+    if (scan_file_data(viewer) != 0) {
+        LOG_ERROR("Failed to scan file data.");
+        return DSV_ERROR_PARSE;
+    }
     printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
 
     // Display features
     phase_time = get_time_ms();
-    if (analyze_columns_legacy(viewer) != 0) goto cleanup;
+    if (analyze_columns_legacy(viewer) != 0) {
+        LOG_ERROR("Failed to analyze columns.");
+        return DSV_ERROR_DISPLAY;
+    }
     configure_viewer_settings(viewer);
     initialize_viewer_cache(viewer);
     printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
 
     printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
-    return 0;
-
-cleanup:
-    cleanup_viewer(viewer);
-    return -1;
+    LOG_INFO("Viewer initialized successfully.");
+    return DSV_OK;
 } 

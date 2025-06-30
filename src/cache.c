@@ -1,5 +1,7 @@
 #include "viewer.h"
 #include "cache.h"
+#include "logging.h"
+#include "error_context.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -184,11 +186,11 @@ static void cleanup_display_cache(struct DSVViewer *viewer) {
 }
 
 // --- Public-Facing System Functions ---
-int init_cache_system(struct DSVViewer *viewer) {
-    if (init_cache_memory_pool(viewer) != 0) return -1;
-    if (init_string_intern_table(viewer) != 0) return -1;
-    if (init_display_cache(viewer) != 0) return -1;
-    return 0;
+DSVResult init_cache_system(struct DSVViewer *viewer) {
+    if (init_cache_memory_pool(viewer) != 0) return DSV_ERROR_CACHE;
+    if (init_string_intern_table(viewer) != 0) return DSV_ERROR_CACHE;
+    if (init_display_cache(viewer) != 0) return DSV_ERROR_CACHE;
+    return DSV_OK;
 }
 
 void cleanup_cache_system(struct DSVViewer *viewer) {

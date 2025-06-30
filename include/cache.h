@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "error_context.h"
 
 // Forward declare to avoid circular dependency
 struct DSVViewer;
@@ -58,7 +59,7 @@ typedef struct CacheMemoryPool {
 
 
 // --- Public Function Declarations for the Cache Subsystem ---
-int init_cache_system(struct DSVViewer *viewer);
+DSVResult init_cache_system(struct DSVViewer *viewer);
 void cleanup_cache_system(struct DSVViewer *viewer);
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 

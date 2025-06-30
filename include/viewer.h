@@ -19,6 +19,7 @@
 // These headers contain the necessary struct definitions and function prototypes.
 #include "cache.h"
 #include "display_state.h"
+#include "error_context.h"
 
 // General constants
 #define MAX_COLS 256
@@ -44,7 +45,7 @@ typedef struct DSVViewer {
 // Core application function declarations
 
 // Parser functions (parser.c)
-int init_viewer(DSVViewer *viewer, const char *filename, char delimiter);
+DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter);
 void cleanup_viewer(DSVViewer *viewer);
 size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
 char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size);

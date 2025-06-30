@@ -1,11 +1,13 @@
 #ifndef VIEWER_CORE_H
 #define VIEWER_CORE_H
 
+#include "error_context.h"
+
 // Forward declaration
 struct DSVViewer;
 
 // Component lifecycle management
-int init_viewer_components(struct DSVViewer *viewer);
+DSVResult init_viewer_components(struct DSVViewer *viewer);
 void cleanup_viewer_components(struct DSVViewer *viewer);
 
 // Configuration management
