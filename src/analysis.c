@@ -109,6 +109,7 @@ int analyze_columns_legacy(struct DSVViewer *viewer) {
 // --- Pure Helper Implementations (Re-implemented from parser.c) ---
 
 int calculate_field_width(const char *field_start, size_t field_length, int needs_unescaping) {
+    (void)field_start;
     (void)needs_unescaping;
     return field_length;
 }

@@ -1,9 +1,12 @@
 #include "viewer.h"
 #include "viewer_core.h"
 #include "file_io.h"
+#include "analysis.h"
+#include "utils.h"
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define CACHE_THRESHOLD_LINES 500
 #define CACHE_THRESHOLD_COLS 20
@@ -88,4 +91,46 @@ void initialize_viewer_cache(struct DSVViewer *viewer) {
             fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
         }
     }
+}
+
+// --- Main Initialization Function ---
+
+int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
+    double phase_time, total_time;
+    total_time = get_time_ms();
+
+    // Core components
+    phase_time = get_time_ms();
+    if (init_viewer_components(viewer) != 0) goto cleanup;
+    printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
+
+    // File operations
+    phase_time = get_time_ms();
+    if (load_file_data(viewer, filename) != 0) goto cleanup;
+    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter);
+    printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
+
+    // Data structures
+    phase_time = get_time_ms();
+    viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
+    if (!viewer->file_data->fields) {
+        fprintf(stderr, "Failed to allocate for fields\n");
+        goto cleanup;
+    }
+    if (scan_file_data(viewer) != 0) goto cleanup;
+    printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
+
+    // Display features
+    phase_time = get_time_ms();
+    if (analyze_columns_legacy(viewer) != 0) goto cleanup;
+    configure_viewer_settings(viewer);
+    initialize_viewer_cache(viewer);
+    printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
+
+    printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
+    return 0;
+
+cleanup:
+    cleanup_viewer(viewer);
+    return -1;
 } 

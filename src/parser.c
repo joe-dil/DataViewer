@@ -1,142 +1,6 @@
 #include "viewer.h"
 #include "display_state.h"
-#include "file_io.h"
-#include "analysis.h"
-#include "utils.h"
-#include "viewer_core.h"
 #include <wchar.h>
-#include <pthread.h>
-#include <sys/time.h>
-
-// Constants to replace magic numbers
-#define COLUMN_ANALYSIS_SAMPLE_LINES 1000
-#define MAX_COLUMN_WIDTH 16
-#define MIN_COLUMN_WIDTH 4
-#define CACHE_THRESHOLD_LINES 500
-#define CACHE_THRESHOLD_COLS 20
-
-// --- Modular Initialization Functions ---
-
-static int init_core_components(DSVViewer *viewer) {
-    double start_time = get_time_ms();
-    
-    // Ensure all pointers are NULL so cleanup is safe
-    memset(viewer, 0, sizeof(DSVViewer));
-    
-    if (init_viewer_components(viewer) != 0) {
-        return -1;
-    }
-    
-    double phase_time = get_time_ms() - start_time;
-    printf("Core components: %.2f ms\n", phase_time);
-    return 0;
-}
-
-static int init_file_operations(DSVViewer *viewer, const char *filename, char delimiter) {
-    double start_time = get_time_ms();
-    double phase_time;
-    
-    // Phase 1: File loading
-    double load_start = get_time_ms();
-    if (load_file_data(viewer, filename) != 0) return -1;
-    phase_time = get_time_ms() - load_start;
-    printf("File loading: %.2f ms\n", phase_time);
-    
-    // Phase 2: Delimiter detection
-    double delim_start = get_time_ms();
-    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter);
-    phase_time = get_time_ms() - delim_start;
-    printf("Delimiter detection: %.2f ms\n", phase_time);
-    
-    double total_time = get_time_ms() - start_time;
-    printf("File operations: %.2f ms\n", total_time);
-    return 0;
-}
-
-static int init_data_structures(DSVViewer *viewer) {
-    double start_time = get_time_ms();
-    double phase_time;
-    
-    // Phase 3: Memory allocation
-    double alloc_start = get_time_ms();
-    viewer->file_data->fields = malloc(MAX_COLS * sizeof(FieldDesc));
-    if (!viewer->file_data->fields) {
-        fprintf(stderr, "Failed to allocate memory for field descriptors\n");
-        return -1;
-    }
-    phase_time = get_time_ms() - alloc_start;
-    printf("Field allocation: %.2f ms\n", phase_time);
-    
-    // Phase 4: File scanning
-    double scan_start = get_time_ms();
-    if (scan_file_data(viewer) != 0) return -1;
-    phase_time = get_time_ms() - scan_start;
-    printf("File scanning: %.2f ms (found %zu lines)\n", phase_time, viewer->file_data->num_lines);
-    
-    double total_time = get_time_ms() - start_time;
-    printf("Data structures: %.2f ms\n", total_time);
-    return 0;
-}
-
-static int init_display_features(DSVViewer *viewer) {
-    double start_time = get_time_ms();
-    double phase_time;
-    
-    // Phase 5: Column analysis
-    double analysis_start = get_time_ms();
-    if (analyze_columns_legacy(viewer) != 0) return -1;
-    phase_time = get_time_ms() - analysis_start;
-    printf("Column analysis: %.2f ms\n", phase_time);
-
-    configure_viewer_settings(viewer);
-    
-    // Phase 6: Cache initialization
-    double cache_start = get_time_ms();
-    initialize_viewer_cache(viewer);
-    phase_time = get_time_ms() - cache_start;
-    printf("Cache initialization: %.2f ms\n", phase_time);
-    
-    double total_time = get_time_ms() - start_time;
-    printf("Display features: %.2f ms\n", total_time);
-    return 0;
-}
-
-// --- Main Initialization Functions ---
-
-// Fast, modular initialization - improved testability and maintainability
-int init_viewer_fast(DSVViewer *viewer, const char *filename, char delimiter) {
-    double start_time = get_time_ms();
-    
-    if (init_core_components(viewer) != 0) {
-        goto cleanup;
-    }
-    
-    if (init_file_operations(viewer, filename, delimiter) != 0) {
-        goto cleanup;
-    }
-    
-    if (init_data_structures(viewer) != 0) {
-        goto cleanup;
-    }
-    
-    if (init_display_features(viewer) != 0) {
-        goto cleanup;
-    }
-    
-    double total_time = get_time_ms() - start_time;
-    printf("Total initialization: %.2f ms\n", total_time);
-    
-    return 0;
-
-cleanup:
-    cleanup_viewer(viewer);
-    return -1;
-}
-
-// Legacy wrapper - maintains compatibility with existing code
-int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
-    return init_viewer_fast(viewer, filename, delimiter);
-}
 
 // --- Core Parsing Logic ---
 
@@ -213,51 +77,65 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     return state.field_count;
 }
 
-char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
-    if (!field->start || field->length == 0) { buffer[0] = '\0'; return buffer; }
+// Helper to handle unquoting and unescaping logic shared by render and width calculation
+static void unquote_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
+    if (!field->start || field->length == 0) {
+        if (buffer_size > 0) buffer[0] = '\0';
+        return;
+    }
+
     const char *src = field->start;
     size_t src_len = field->length;
     size_t dst_pos = 0;
-    if (src_len >= 2 && src[0] == '"' && src[src_len-1] == '"') { src++; src_len -= 2; }
+
+    // Remove surrounding quotes if they exist
+    if (src_len >= 2 && src[0] == '"' && src[src_len-1] == '"') {
+        src++;
+        src_len -= 2;
+    }
+
+    // Handle escaped quotes ("")
     if (field->needs_unescaping) {
         for (size_t i = 0; i < src_len && dst_pos < buffer_size - 1; i++) {
             if (src[i] == '"' && i + 1 < src_len && src[i + 1] == '"') {
                 buffer[dst_pos++] = '"';
-                i++;
-            } else if (src[i] == '\n') {
-                buffer[dst_pos++] = ' ';
+                i++; // Skip the second quote
             } else {
                 buffer[dst_pos++] = src[i];
             }
         }
     } else {
+        // Simple copy if no unescaping is needed
         size_t copy_len = src_len < buffer_size - 1 ? src_len : buffer_size - 1;
         memcpy(buffer, src, copy_len);
         dst_pos = copy_len;
     }
     buffer[dst_pos] = '\0';
+}
+
+char* render_field(const FieldDesc *field, char *buffer, size_t buffer_size) {
+    // Now just a simple wrapper around the unquote helper
+    unquote_field(field, buffer, buffer_size);
+    // Replace newlines with spaces for single-line display
+    for(size_t i = 0; buffer[i] != '\0'; ++i) {
+        if (buffer[i] == '\n') {
+            buffer[i] = ' ';
+        }
+    }
     return buffer;
 }
 
 int calculate_field_display_width(DSVViewer *viewer, const FieldDesc *field) {
-    if (!field->start || field->length == 0) return 0;
-    size_t raw_len = field->length;
-    if (raw_len >= 2 && field->start[0] == '"' && field->start[raw_len-1] == '"') raw_len -= 2;
-    if (field->needs_unescaping) {
-        char *temp_buffer = viewer->display_state->buffers.buffer_one;
-        render_field(field, temp_buffer, MAX_FIELD_LEN);
-        wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
-        mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
-        int display_width = wcswidth(wcs, MAX_FIELD_LEN);
-        return display_width < 0 ? strlen(temp_buffer) : display_width;
-    } else {
-        char *temp = viewer->display_state->buffers.buffer_one;
-        size_t copy_len = raw_len < MAX_FIELD_LEN - 1 ? raw_len : MAX_FIELD_LEN - 1;
-        memcpy(temp, field->start + (field->length > raw_len ? 1 : 0), copy_len);
-        temp[copy_len] = '\0';
-        wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
-        mbstowcs(wcs, temp, MAX_FIELD_LEN);
-        int display_width = wcswidth(wcs, MAX_FIELD_LEN);
-        return display_width < 0 ? copy_len : display_width;
-    }
+    if (!field || !field->start || field->length == 0) return 0;
+    
+    // Use buffer_one for unquoting
+    char *temp_buffer = viewer->display_state->buffers.buffer_one;
+    unquote_field(field, temp_buffer, MAX_FIELD_LEN);
+
+    // Use wide_buffer for width calculation
+    wchar_t *wcs = viewer->display_state->buffers.wide_buffer;
+    mbstowcs(wcs, temp_buffer, MAX_FIELD_LEN);
+    int display_width = wcswidth(wcs, MAX_FIELD_LEN);
+
+    return display_width < 0 ? strlen(temp_buffer) : display_width;
 } 
