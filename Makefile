@@ -8,7 +8,7 @@ TARGET = $(BINDIR)/viewer
 SOURCES = $(wildcard $(SRCDIR)/*.c)
 OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
-.PHONY: all clean test
+.PHONY: all clean test valgrind
 
 all: $(TARGET)
 
@@ -23,8 +23,13 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 clean:
 	@rm -rf $(OBJDIR) $(BINDIR)
 
-test: all
-	@./$(TARGET) "Bird Strikes Test.csv"
+test:
+	@echo "Running tests..."
+	@$(MAKE) -C tests test
+
+valgrind:
+	@echo "Running tests with Valgrind..."
+	@$(MAKE) -C tests valgrind
 
 # Install dependencies (for systems that need ncurses dev packages)
 install-deps:
@@ -52,7 +57,8 @@ help:
 	@echo "Targets:"
 	@echo "  all        - Build the DSV viewer (default)"
 	@echo "  clean      - Remove build artifacts"
-	@echo "  test       - Build and run a test"
+	@echo "  test       - Build and run all unit tests"
+	@echo "  valgrind   - Run unit tests with Valgrind"
 	@echo "  help       - Show this help message"
 
-.PHONY: clean test install-deps debug help 
+.PHONY: clean test valgrind install-deps debug help 
