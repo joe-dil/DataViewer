@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include "display_state.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
@@ -99,6 +100,11 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
         if (col < num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
             mvaddstr(y, x, viewer->display_state->separator);
         }
+        // Add final column separator if this is the last column
+        else if (col == num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+            const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
+            mvaddstr(y, x, final_separator);
+        }
         x += 3;
         
         if (col_width != original_col_width && x >= cols) {
@@ -127,6 +133,11 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         
         // Add separator if not last column and space available  
         add_separator_if_needed(viewer, y, x, col, num_fields, cols);
+        // Add final column separator if this is the last column
+        if (col == num_fields - 1 && x + 3 <= cols) {
+            const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
+            mvaddstr(y, x, final_separator);
+        }
         x += 3;
     }
 }
