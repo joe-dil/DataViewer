@@ -26,4 +26,10 @@ bin/test_runner
 # Profiling/debugging
 *.out
 profile_output.txt
-gmon.out deps/
+gmon.out
+
+# Static analysis artifacts
+*.plist
+
+# Build system
+deps/
