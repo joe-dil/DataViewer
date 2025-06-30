@@ -2,6 +2,8 @@
 #include "display_state.h"
 #include "file_io.h"
 #include "analysis.h"
+#include "utils.h"
+#include "viewer_core.h"
 #include <wchar.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -13,60 +15,6 @@
 #define CACHE_THRESHOLD_LINES 500
 #define CACHE_THRESHOLD_COLS 20
 
-// Simple timing utility for profiling
-static double get_time_ms(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
-}
-
-// --- Static Helper Declarations ---
-
-
-// --- Component Initialization ---
-static int init_components(DSVViewer *viewer) {
-    // -- Initialize new DisplayState component --
-    viewer->display_state = malloc(sizeof(DisplayState));
-    if (!viewer->display_state) {
-        perror("Failed to allocate for DisplayState");
-        return -1;
-    }
-    memset(viewer->display_state, 0, sizeof(DisplayState));
-
-    // -- Initialize new FileAndParseData component --
-    viewer->file_data = malloc(sizeof(FileAndParseData));
-    if (!viewer->file_data) {
-        perror("Failed to allocate for FileAndParseData");
-        return -1; // display_state will be cleaned up by the caller
-    }
-    memset(viewer->file_data, 0, sizeof(FileAndParseData));
-    return 0;
-}
-
-static void configure_display_settings(DSVViewer *viewer) {
-    // Set the values directly.
-    viewer->display_state->show_header = 1; // Default is 1 (true)
-    
-    // The locale logic is now coupled with the DisplayState.
-    char *locale = setlocale(LC_CTYPE, NULL);
-    if (locale && (strstr(locale, "UTF-8") || strstr(locale, "utf8"))) {
-        viewer->display_state->supports_unicode = 1;
-        viewer->display_state->separator = UNICODE_SEPARATOR;
-    } else {
-        viewer->display_state->supports_unicode = 0;
-        viewer->display_state->separator = ASCII_SEPARATOR;
-    }
-}
-
-static void initialize_cache_if_needed(DSVViewer *viewer) {
-    if (viewer->file_data->num_lines > CACHE_THRESHOLD_LINES || viewer->display_state->num_cols > CACHE_THRESHOLD_COLS) {
-        if (init_cache_system((struct DSVViewer*)viewer) != 0) {
-            fprintf(stderr, "Warning: Failed to initialize cache. Continuing without it.\n");
-            // The cleanup function will safely handle the partially initialized cache components.
-        }
-    }
-}
-
 // --- Modular Initialization Functions ---
 
 static int init_core_components(DSVViewer *viewer) {
@@ -75,7 +23,7 @@ static int init_core_components(DSVViewer *viewer) {
     // Ensure all pointers are NULL so cleanup is safe
     memset(viewer, 0, sizeof(DSVViewer));
     
-    if (init_components(viewer) != 0) {
+    if (init_viewer_components(viewer) != 0) {
         return -1;
     }
     
@@ -140,11 +88,11 @@ static int init_display_features(DSVViewer *viewer) {
     phase_time = get_time_ms() - analysis_start;
     printf("Column analysis: %.2f ms\n", phase_time);
 
-    configure_display_settings(viewer);
+    configure_viewer_settings(viewer);
     
     // Phase 6: Cache initialization
     double cache_start = get_time_ms();
-    initialize_cache_if_needed(viewer);
+    initialize_viewer_cache(viewer);
     phase_time = get_time_ms() - cache_start;
     printf("Cache initialization: %.2f ms\n", phase_time);
     
@@ -188,32 +136,6 @@ cleanup:
 // Legacy wrapper - maintains compatibility with existing code
 int init_viewer(DSVViewer *viewer, const char *filename, char delimiter) {
     return init_viewer_fast(viewer, filename, delimiter);
-}
-
-static void cleanup_file_and_parse_data_resources(DSVViewer *viewer) {
-    if (!viewer->file_data) return;
-    
-    if (viewer->file_data->fields) free(viewer->file_data->fields);
-    if (viewer->file_data->line_offsets) free(viewer->file_data->line_offsets);
-    
-    // The main struct pointer is freed in the main cleanup function
-}
-
-void cleanup_viewer(DSVViewer *viewer) {
-    if (!viewer) return;
-
-    cleanup_file_data(viewer);
-    cleanup_cache_system((struct DSVViewer*)viewer);
-    cleanup_file_and_parse_data_resources(viewer);
-
-    if (viewer->display_state) {
-        if (viewer->display_state->col_widths) free(viewer->display_state->col_widths);
-        free(viewer->display_state);
-    }
-
-    if (viewer->file_data) {
-        free(viewer->file_data);
-    }
 }
 
 // --- Core Parsing Logic ---
