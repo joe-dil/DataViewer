@@ -28,7 +28,7 @@ char* acquire_buffer(ManagedBufferPool *pool, const char *purpose);
  * @param pool A pointer to the ManagedBufferPool.
  * @param buffer A pointer to the buffer to release.
  */
-void release_buffer(ManagedBufferPool *pool, char* buffer);
+void release_buffer(ManagedBufferPool *pool, const char* buffer);
 
 /**
  * @brief Frees all memory associated with a ManagedBufferPool.

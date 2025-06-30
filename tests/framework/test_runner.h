@@ -37,6 +37,25 @@ extern int current_test_failed;
         } \
     } while (0)
 
+// Additional assertion macros for convenience
+#define ASSERT_EQ(actual, expected) \
+    TEST_ASSERT((actual) == (expected), "Expected values to be equal")
+
+#define ASSERT_NE(actual, expected) \
+    TEST_ASSERT((actual) != (expected), "Expected values to be different")
+
+#define ASSERT_GT(actual, threshold) \
+    TEST_ASSERT((actual) > (threshold), "Expected value to be greater than threshold")
+
+#define ASSERT_LT(actual, threshold) \
+    TEST_ASSERT((actual) < (threshold), "Expected value to be less than threshold")
+
+#define ASSERT_NULL(ptr) \
+    TEST_ASSERT((ptr) == NULL, "Expected pointer to be NULL")
+
+#define ASSERT_NOT_NULL(ptr) \
+    TEST_ASSERT((ptr) != NULL, "Expected pointer to be non-NULL")
+
 // --- Test Runner Functions ---
 
 // Run a single test case by name

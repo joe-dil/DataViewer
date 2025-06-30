@@ -41,9 +41,15 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
             // Pad truncated header fields with spaces
             int text_len = strlen(display_string);
             char *padded_field = viewer->display_state->buffers.pad_buffer;
-            strcpy(padded_field, display_string);
-            memset(padded_field + text_len, ' ', col_width - text_len);
-            padded_field[col_width] = '\0';
+            // Safe bounded copy instead of strcpy
+            strncpy(padded_field, display_string, config->max_field_len - 1);
+            padded_field[config->max_field_len - 1] = '\0'; // Ensure null termination
+            // Ensure we don't exceed buffer bounds for padding
+            int safe_col_width = (col_width < config->max_field_len) ? col_width : config->max_field_len - 1;
+            if (text_len < safe_col_width) {
+                memset(padded_field + text_len, ' ', safe_col_width - text_len);
+            }
+            padded_field[safe_col_width] = '\0';
             mvaddstr(y, x, padded_field);
         } else {
             mvaddstr(y, x, display_string);

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // Internal helper to get buffer index from buffer pointer
-static int get_buffer_index(ManagedBufferPool *pool, const char* buffer) {
+static int get_buffer_index(const ManagedBufferPool *pool, const char* buffer) {
     if (!pool || !buffer) return -1;
     
     // Check which buffer this pointer refers to
@@ -82,7 +82,7 @@ char* acquire_buffer(ManagedBufferPool *pool, const char* purpose) {
     return NULL;
 }
 
-void release_buffer(ManagedBufferPool *pool, char* buffer) {
+void release_buffer(ManagedBufferPool *pool, const char* buffer) {
     if (!pool || !buffer) {
         LOG_ERROR("NULL pool or buffer passed to release_buffer");
         return;

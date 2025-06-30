@@ -20,7 +20,7 @@ static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config);
 
 // --- Validation Functions (Critical Fixes) ---
 
-int validate_file_bounds(struct DSVViewer *viewer) {
+static int validate_file_bounds(struct DSVViewer *viewer) {
     // CRITICAL: Prevent SIZE_MAX assignment when num_lines == 0
     if (viewer->file_data->num_lines == 0) {
         // Create minimal valid state instead of underflow
@@ -33,7 +33,7 @@ int validate_file_bounds(struct DSVViewer *viewer) {
     return 1; // Normal file
 }
 
-int handle_empty_file(struct DSVViewer *viewer) {
+static int handle_empty_file(struct DSVViewer *viewer) {
     if (viewer->file_data->length == 0) {
         // Set up minimal valid state for empty files
         viewer->file_data->num_lines = 1;
@@ -47,7 +47,7 @@ int handle_empty_file(struct DSVViewer *viewer) {
 }
 
 // Handle single line files - basic implementation
-int handle_single_line_file(struct DSVViewer *viewer) {
+static int handle_single_line_file(struct DSVViewer *viewer) {
     // Single-line files are handled by the normal scanning process
     if (viewer->file_data->num_lines == 1) {
         // Single line files work correctly with existing logic

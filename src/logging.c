@@ -57,7 +57,7 @@ void log_message(LogLevel level, const char* file, int line, const char* fmt, ..
     // Timestamp
     time_t timer;
     char time_buffer[26];
-    struct tm* tm_info;
+    const struct tm* tm_info;
     time(&timer);
     tm_info = localtime(&timer);
     strftime(time_buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);

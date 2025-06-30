@@ -16,8 +16,8 @@ TEST_TARGET = $(BINDIR)/test_runner
 # Source files
 # Include all application sources EXCEPT main.c
 APP_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
-# Include all test framework and unit test sources
-TEST_SOURCES = $(wildcard $(TEST_FRAMEWORK_DIR)/*.c) $(wildcard $(TEST_UNIT_DIR)/*.c) test_main.c
+# Include all test framework, unit test, and integration test sources
+TEST_SOURCES = $(wildcard $(TEST_FRAMEWORK_DIR)/*.c) $(wildcard $(TEST_UNIT_DIR)/*.c) $(wildcard integration/*.c) test_main.c
 
 # Objects
 APP_OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/app/%.o,$(APP_SOURCES))
