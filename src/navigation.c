@@ -38,28 +38,34 @@ static InputResult handle_input_with_redraw_control(int ch, struct DSVViewer *vi
             }
             break;
         case KEY_RIGHT:
-            // Don't scroll if no columns would be visible from next position
+            // Stop scrolling if the last column is already fully visible
             if (*start_col < viewer->display_state->num_cols - 1) {
-                // Quick check: would any columns be visible from next position?
                 int rows, cols;
                 getmaxyx(stdscr, rows, cols);
                 (void)rows;
                 
-                size_t next_start = *start_col + 1;
+                // Check if the last column is already fully visible from current position
                 int x = 0;
-                bool would_show_columns = false;
+                bool last_column_fully_visible = false;
                 
-                // Check if any columns from next_start would fit on screen
-                for (size_t col = next_start; col < viewer->display_state->num_cols; col++) {
+                for (size_t col = *start_col; col < viewer->display_state->num_cols; col++) {
                     int col_width = viewer->display_state->col_widths[col];
-                    if (x + col_width <= cols) {
-                        would_show_columns = true;
+                    
+                    // If this is the last column, check if it fits completely (including final separator)
+                    if (col == viewer->display_state->num_cols - 1) {
+                        if (x + col_width + 3 <= cols) { // Column + final separator space
+                            last_column_fully_visible = true;
+                        }
                         break;
                     }
+                    
+                    // For non-last columns, just advance position
                     x += col_width + 3;
+                    if (x >= cols) break; // No point checking further if we're already past screen
                 }
                 
-                if (would_show_columns) {
+                // Only allow scrolling if the last column is not yet fully visible
+                if (!last_column_fully_visible) {
                     (*start_col)++;
                 }
             }
