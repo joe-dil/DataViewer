@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <limits.h>
+#include <stdint.h>
 
 // --- Default Values ---
 
@@ -80,35 +82,62 @@ DSVResult config_load_from_file(DSVConfig *config, const char *filename) {
         key = trim_whitespace(key);
         value = trim_whitespace(value);
         
-        // Use a macro to simplify setting config values
-        #define SET_CONFIG(name, format, type) \
-            if (strcmp(key, #name) == 0) { sscanf(value, format, (type*)&config->name); }
+        // Strip comments from value
+        char *comment = strchr(value, '#');
+        if (comment) {
+            *comment = '\0';
+            value = trim_whitespace(value);
+        }
+        
+        // Safe config parsing with bounds checking and validation
+        #define SET_CONFIG_INT(name) \
+            if (strcmp(key, #name) == 0) { \
+                char *endptr; \
+                long val = strtol(value, &endptr, 10); \
+                if (*endptr == '\0' && val >= 0 && val <= INT_MAX) { \
+                    config->name = (int)val; \
+                } else { \
+                    LOG_WARN("Invalid integer value '%s' for '%s' in %s", value, key, filename); \
+                } \
+            }
+
+        #define SET_CONFIG_SIZE_T(name) \
+            if (strcmp(key, #name) == 0) { \
+                char *endptr; \
+                unsigned long long val = strtoull(value, &endptr, 10); \
+                if (*endptr == '\0' && val <= SIZE_MAX) { \
+                    config->name = (size_t)val; \
+                } else { \
+                    LOG_WARN("Invalid size_t value '%s' for '%s' in %s", value, key, filename); \
+                } \
+            }
 
         // Display
-        SET_CONFIG(max_field_len, "%d", int)
-        else SET_CONFIG(max_cols, "%d", int)
-        else SET_CONFIG(max_column_width, "%d", int)
-        else SET_CONFIG(min_column_width, "%d", int)
-        else SET_CONFIG(buffer_pool_size, "%d", int)
+        SET_CONFIG_INT(max_field_len)
+        else SET_CONFIG_INT(max_cols)
+        else SET_CONFIG_INT(max_column_width)
+        else SET_CONFIG_INT(min_column_width)
+        else SET_CONFIG_INT(buffer_pool_size)
         // Cache
-        else SET_CONFIG(cache_size, "%d", int)
-        else SET_CONFIG(cache_string_pool_size, "%zu", size_t)
-        else SET_CONFIG(intern_table_size, "%d", int)
-        else SET_CONFIG(max_truncated_versions, "%d", int)
-        else SET_CONFIG(cache_threshold_lines, "%d", int)
-        else SET_CONFIG(cache_threshold_cols, "%d", int)
+        else SET_CONFIG_INT(cache_size)
+        else SET_CONFIG_SIZE_T(cache_string_pool_size)
+        else SET_CONFIG_INT(intern_table_size)
+        else SET_CONFIG_INT(max_truncated_versions)
+        else SET_CONFIG_INT(cache_threshold_lines)
+        else SET_CONFIG_INT(cache_threshold_cols)
         // I/O
-        else SET_CONFIG(buffer_size, "%zu", size_t)
-        else SET_CONFIG(delimiter_detection_sample_size, "%d", int)
-        else SET_CONFIG(line_estimation_sample_size, "%d", int)
-        else SET_CONFIG(default_chars_per_line, "%d", int)
+        else SET_CONFIG_SIZE_T(buffer_size)
+        else SET_CONFIG_INT(delimiter_detection_sample_size)
+        else SET_CONFIG_INT(line_estimation_sample_size)
+        else SET_CONFIG_INT(default_chars_per_line)
         // Analysis
-        else SET_CONFIG(column_analysis_sample_lines, "%d", int)
+        else SET_CONFIG_INT(column_analysis_sample_lines)
         else {
             LOG_WARN("Unknown configuration key '%s' in %s", key, filename);
         }
         
-        #undef SET_CONFIG
+        #undef SET_CONFIG_INT
+        #undef SET_CONFIG_SIZE_T
     }
     
     fclose(file);
@@ -120,38 +149,45 @@ DSVResult config_load_from_file(DSVConfig *config, const char *filename) {
 DSVResult config_validate(const DSVConfig *config) {
     if (!config) return DSV_ERROR_INVALID_ARGS;
     
-    // Use a macro for simple positive value checks
-    #define VALIDATE_POSITIVE(name) \
+    // Use separate macros for int and size_t validation to avoid unsigned comparison errors
+    #define VALIDATE_POSITIVE_INT(name) \
         if (config->name <= 0) { \
+            LOG_ERROR("Invalid config: '%s' must be positive.", #name); \
+            return DSV_ERROR; \
+        }
+
+    #define VALIDATE_POSITIVE_SIZE_T(name) \
+        if (config->name == 0) { \
             LOG_ERROR("Invalid config: '%s' must be positive.", #name); \
             return DSV_ERROR; \
         }
     
     // Display
-    VALIDATE_POSITIVE(max_field_len)
-    VALIDATE_POSITIVE(max_cols)
-    VALIDATE_POSITIVE(max_column_width)
-    VALIDATE_POSITIVE(min_column_width)
-    VALIDATE_POSITIVE(buffer_pool_size)
+    VALIDATE_POSITIVE_INT(max_field_len)
+    VALIDATE_POSITIVE_INT(max_cols)
+    VALIDATE_POSITIVE_INT(max_column_width)
+    VALIDATE_POSITIVE_INT(min_column_width)
+    VALIDATE_POSITIVE_INT(buffer_pool_size)
 
     // Cache
-    VALIDATE_POSITIVE(cache_size)
-    VALIDATE_POSITIVE(cache_string_pool_size)
-    VALIDATE_POSITIVE(intern_table_size)
-    VALIDATE_POSITIVE(max_truncated_versions)
-    VALIDATE_POSITIVE(cache_threshold_lines)
-    VALIDATE_POSITIVE(cache_threshold_cols)
+    VALIDATE_POSITIVE_INT(cache_size)
+    VALIDATE_POSITIVE_SIZE_T(cache_string_pool_size)
+    VALIDATE_POSITIVE_INT(intern_table_size)
+    VALIDATE_POSITIVE_INT(max_truncated_versions)
+    VALIDATE_POSITIVE_INT(cache_threshold_lines)
+    VALIDATE_POSITIVE_INT(cache_threshold_cols)
 
     // I/O
-    VALIDATE_POSITIVE(buffer_size)
-    VALIDATE_POSITIVE(delimiter_detection_sample_size)
-    VALIDATE_POSITIVE(line_estimation_sample_size)
-    VALIDATE_POSITIVE(default_chars_per_line)
+    VALIDATE_POSITIVE_SIZE_T(buffer_size)
+    VALIDATE_POSITIVE_INT(delimiter_detection_sample_size)
+    VALIDATE_POSITIVE_INT(line_estimation_sample_size)
+    VALIDATE_POSITIVE_INT(default_chars_per_line)
 
     // Analysis
-    VALIDATE_POSITIVE(column_analysis_sample_lines)
+    VALIDATE_POSITIVE_INT(column_analysis_sample_lines)
 
-    #undef VALIDATE_POSITIVE
+    #undef VALIDATE_POSITIVE_INT
+    #undef VALIDATE_POSITIVE_SIZE_T
 
     if (config->min_column_width > config->max_column_width) {
         LOG_ERROR("Invalid config: 'min_column_width' cannot be greater than 'max_column_width'.");

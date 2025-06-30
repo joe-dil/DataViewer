@@ -71,21 +71,26 @@ void test_config_file_loading_valid() {
 
 void test_config_file_loading_invalid() {
     const char* invalid_config = 
-        "max_field_len=-100\n"  // Invalid negative value
-        "invalid_key=value\n"   // Unknown key
-        "malformed line\n";     // No = sign
+        "max_field_len=-100\n"  // Invalid negative value (will be ignored)
+        "invalid_key=value\n"   // Unknown key (will be ignored)
+        "malformed line\n";     // No = sign (will be ignored)
     
     create_test_config_file("test_invalid.conf", invalid_config);
     
     DSVConfig config;
     config_init_defaults(&config);
+    int original_max_field_len = config.max_field_len;
     
-    // Should load successfully but validation should fail due to negative value
+    // Loading succeeds with warnings, invalid values are ignored
     DSVResult load_result = config_load_from_file(&config, "test_invalid.conf");
     ASSERT_EQ(load_result, DSV_OK); // Loading succeeds
     
+    // Invalid value should be ignored, keeping default value
+    ASSERT_EQ(config.max_field_len, original_max_field_len); // Default value preserved
+    
+    // Config should still be valid since invalid values were ignored
     DSVResult validate_result = config_validate(&config);
-    ASSERT_NE(validate_result, DSV_OK); // But validation fails
+    ASSERT_EQ(validate_result, DSV_OK); // Validation succeeds
     
     unlink("test_invalid.conf");
     printf("✓ Invalid config handling passed\n");
