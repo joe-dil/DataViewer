@@ -4,6 +4,7 @@
 #include "logging.h"
 #include "error_context.h"
 #include "utils.h"
+#include "encoding.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -194,44 +195,20 @@ static void cleanup_string_intern_table(struct DSVViewer *viewer) {
 }
 
 // --- Display Cache ---
-// Calculate display width accounting for multi-byte Unicode characters
+// Calculate display width accounting for encoding and multi-byte characters
 static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(str, 0);
-    CHECK_NULL_RET(viewer->display_state, 0);
+    CHECK_NULL_RET(viewer->file_data, 0);
     
-    wchar_t* wcs = viewer->display_state->buffers.wide_buffer;
-    if (!wcs) return strlen(str); // Fallback to byte length
-    
-    mbstowcs(wcs, str, viewer->config->max_field_len);
-    int width = wcswidth(wcs, viewer->config->max_field_len);
-    return (width < 0) ? strlen(str) : width; // Fallback for invalid sequences
+    return get_text_display_width(str, viewer->file_data->detected_encoding, viewer->config->max_field_len);
 }
 
-// Truncate string to specified display width, preserving Unicode boundaries
+// Truncate string to specified display width, preserving character boundaries for the detected encoding
 static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, int width) {
-    if (!viewer || !src || !dest || !viewer->display_state) return;
+    if (!viewer || !src || !dest || !viewer->file_data) return;
     
-    wchar_t* wcs = viewer->display_state->buffers.wide_buffer;
-    if (!wcs) {
-        // Fallback: simple byte truncation
-        size_t max_len = (size_t)width < (size_t)viewer->config->max_field_len ? (size_t)width : (size_t)viewer->config->max_field_len - 1;
-        strncpy(dest, src, max_len);
-        dest[max_len] = '\0';
-        return;
-    }
-    
-    // Convert to wide chars, truncate by display width, convert back
-    mbstowcs(wcs, src, viewer->config->max_field_len);
-    int current_width = 0, i = 0;
-    for (i = 0; wcs[i] != '\0'; ++i) {
-        int char_width = wcwidth(wcs[i]);
-        if (char_width < 0) char_width = 1; // Control chars get width 1
-        if (current_width + char_width > width) break;
-        current_width += char_width;
-    }
-    wcs[i] = '\0';
-    wcstombs(dest, wcs, viewer->config->max_field_len);
+    truncate_text_safe(src, dest, viewer->config->max_field_len, width, viewer->file_data->detected_encoding);
 }
 
 // --- Cache Entry Management Helpers ---

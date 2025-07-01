@@ -36,6 +36,11 @@ void config_init_defaults(DSVConfig *config) {
     
     // Analysis
     config->column_analysis_sample_lines = DEFAULT_COLUMN_ANALYSIS_LINES;
+    
+    // Encoding settings
+    config->force_encoding = NULL;               // Auto-detect by default
+    config->encoding_detection_sample_size = 8192; // 8KB sample for detection
+    config->auto_detect_encoding = 1;            // Enable auto-detection
 }
 
 
@@ -133,6 +138,19 @@ DSVResult config_load_from_file(DSVConfig *config, const char *filename) {
         else SET_CONFIG_INT(default_chars_per_line)
         // Analysis
         else SET_CONFIG_INT(column_analysis_sample_lines)
+        // Encoding
+        else SET_CONFIG_INT(encoding_detection_sample_size)
+        else SET_CONFIG_INT(auto_detect_encoding)
+        else if (strcmp(key, "force_encoding") == 0) {
+            // String config requires special handling
+            if (config->force_encoding) {
+                free(config->force_encoding);
+            }
+            config->force_encoding = strdup(value);
+            if (!config->force_encoding) {
+                LOG_WARN("Failed to allocate memory for force_encoding");
+            }
+        }
         else {
             LOG_WARN("Unknown configuration key '%s' in %s", key, filename);
         }
@@ -186,6 +204,10 @@ DSVResult config_validate(const DSVConfig *config) {
 
     // Analysis
     VALIDATE_POSITIVE_INT(column_analysis_sample_lines)
+    
+    // Encoding
+    VALIDATE_POSITIVE_INT(encoding_detection_sample_size)
+    // auto_detect_encoding can be 0 or 1, so no validation needed
 
     #undef VALIDATE_POSITIVE_INT
     #undef VALIDATE_POSITIVE_SIZE_T

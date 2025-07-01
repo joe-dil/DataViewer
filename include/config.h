@@ -30,6 +30,11 @@ typedef struct {
     
     // Analysis settings
     int column_analysis_sample_lines;
+    
+    // Encoding settings (detection only, no conversion)
+    char *force_encoding;              // Force specific encoding (NULL = auto-detect)
+    int encoding_detection_sample_size; // Bytes to analyze for detection
+    int auto_detect_encoding;          // Enable/disable auto-detection
 } DSVConfig;
 
 

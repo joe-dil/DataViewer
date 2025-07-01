@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "field_desc.h"
+#include "encoding.h"
 
 // A component to hold file and parsing related data.
 typedef struct {
@@ -10,6 +11,7 @@ typedef struct {
     size_t length;
     int fd;
     char delimiter;
+    FileEncoding detected_encoding;
     FieldDesc *fields;
     size_t num_fields;
     size_t *line_offsets;

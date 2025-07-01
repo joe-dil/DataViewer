@@ -10,6 +10,7 @@
 static DSVViewer mock_viewer;
 static DisplayState mock_display_state;
 static FileAndParseData mock_file_data;
+static DSVConfig mock_config;  // Make config static so it persists
 
 // Helper to reset mocks before each test
 void setup_display_mocks() {
@@ -23,10 +24,9 @@ void setup_display_mocks() {
     mock_viewer.file_data = &mock_file_data;
 
     // Initialize the buffer pool for tests
-    DSVConfig config;
-    config_init_defaults(&config);
-    mock_viewer.config = &config;
-    init_buffer_pool(&mock_display_state.buffers, &config);
+    config_init_defaults(&mock_config);  // Use static config
+    mock_viewer.config = &mock_config;
+    init_buffer_pool(&mock_display_state.buffers, &mock_config);
 }
 
 void teardown_display_mocks() {

@@ -14,7 +14,7 @@ TARGET = $(BINDIR)/viewer
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/viewer.c $(SRCDIR)/display.c $(SRCDIR)/navigation.c \
           $(SRCDIR)/parser.c $(SRCDIR)/file_io.c $(SRCDIR)/analysis.c $(SRCDIR)/config.c \
           $(SRCDIR)/logging.c $(SRCDIR)/utils.c $(SRCDIR)/cache.c $(SRCDIR)/buffer_pool.c \
-          $(SRCDIR)/error_context.c $(SRCDIR)/input_router.c
+          $(SRCDIR)/error_context.c $(SRCDIR)/input_router.c $(SRCDIR)/encoding.c
 
 # All .c files in the src directory, excluding main.c
 LIB_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))

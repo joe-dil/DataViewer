@@ -5,6 +5,7 @@
 #include "logging.h"
 #include "error_context.h"
 #include "utils.h"
+#include "encoding.h"
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -134,8 +135,22 @@ DSVResult load_file_data(struct DSVViewer *viewer, const char *filename) {
             close(viewer->file_data->fd);
             return DSV_ERROR_FILE_IO;
         }
+        
+        // Detect file encoding after successful mmap
+        EncodingDetectionResult encoding_result = detect_file_encoding(viewer->file_data->data, viewer->file_data->length, viewer->config);
+        viewer->file_data->detected_encoding = encoding_result.detected_encoding;
+        
+        LOG_INFO("File '%s': %s (confidence: %.2f)", filename, encoding_result.encoding_name, encoding_result.confidence);
+        
+        // Skip BOM if present
+        if (encoding_result.bom_size > 0) {
+            viewer->file_data->data += encoding_result.bom_size;
+            viewer->file_data->length -= encoding_result.bom_size;
+            LOG_DEBUG("Skipped %zu byte BOM", encoding_result.bom_size);
+        }
     } else {
         viewer->file_data->data = NULL;
+        viewer->file_data->detected_encoding = ENCODING_ASCII; // Empty file defaults to ASCII
     }
     return DSV_OK;
 }
