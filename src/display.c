@@ -36,6 +36,8 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     // Calculate total width needed for all visible columns
     int total_width = 0;
     size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, config->max_cols);
+    size_t last_processed_col = start_col;
+    bool broke_early = false;
     
     for (size_t col = start_col; col < num_fields; col++) {
         int col_width = get_column_width(viewer, col);
@@ -45,17 +47,30 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
         if (total_width + needed_space > cols) {
             // If this column would extend past screen, truncate
             col_width = cols - total_width - separator_space;
-            if (col_width <= 0) break;
+            if (col_width <= 0) {
+                broke_early = true;
+                break;
+            }
             total_width += col_width;
+            last_processed_col = col;
+            broke_early = true;
             break;
         } else {
             total_width += needed_space;
+            last_processed_col = col;
         }
     }
     
-    // Fill only the needed width with spaces for continuous underline
+    // Check if there are more columns to the right:
+    // Either we broke early OR we finished the loop but haven't shown all columns
+    bool has_more_columns_right = broke_early || (last_processed_col + 1 < num_fields);
+    
+    // Extend underline to full width if there are more columns to the right
+    int underline_width = has_more_columns_right ? cols : total_width;
+    
+    // Fill spaces for continuous underline
     move(y, 0);
-    for (int i = 0; i < total_width && i < cols; i++) {
+    for (int i = 0; i < underline_width; i++) {
         addch(' ');
     }
     
