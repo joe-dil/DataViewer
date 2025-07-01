@@ -8,7 +8,7 @@ SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
 DEPDIR = deps
-TARGET = $(BINDIR)/viewer
+TARGET = $(BINDIR)/dv
 
 # Source files
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/viewer.c $(SRCDIR)/display.c $(SRCDIR)/navigation.c \
