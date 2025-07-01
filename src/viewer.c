@@ -55,7 +55,7 @@ void cleanup_viewer(DSVViewer *viewer) {
     if (!viewer) return;
 
     cleanup_file_data(viewer); // from file_io.h
-    cleanup_cache_system((struct DSVViewer*)viewer); // from cache.h
+    cleanup_cache_system(viewer); // from cache.h
     cleanup_viewer_resources(viewer);
 
     if (viewer->display_state) {
@@ -85,7 +85,7 @@ static void configure_viewer_settings(struct DSVViewer *viewer, const DSVConfig 
 
 static void initialize_viewer_cache(struct DSVViewer *viewer, const DSVConfig *config) {
     if (viewer->file_data->num_lines > (size_t)config->cache_threshold_lines || viewer->display_state->num_cols > (size_t)config->cache_threshold_cols) {
-        if (init_cache_system((struct DSVViewer*)viewer, config) != DSV_OK) {
+        if (init_cache_system(viewer, config) != DSV_OK) {
             LOG_WARN("Failed to initialize cache. Continuing without it.");
         }
     }

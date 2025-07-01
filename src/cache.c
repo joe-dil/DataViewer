@@ -20,6 +20,8 @@ static void cleanup_string_intern_table(struct DSVViewer *viewer);
 static const char* intern_string(struct DSVViewer *viewer, const char* str);
 static char* pool_strdup(struct DSVViewer *viewer, const char* str);
 static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer);
+static TruncatedString* pool_alloc_truncated_array(struct DSVViewer *viewer, int count);
+static StringInternEntry* pool_alloc_intern_entry(struct DSVViewer *viewer);
 
 // --- Cache Entry Management Helpers ---
 static DisplayCacheEntry* find_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash);
@@ -43,8 +45,29 @@ static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer) {
     CHECK_NULL_RET(viewer, NULL);
     CHECK_NULL_RET(viewer->mem_pool, NULL);
     
-    if ((size_t)viewer->mem_pool->entry_pool_used >= (size_t)viewer->config->cache_size * 2) return NULL;
+    if (viewer->mem_pool->entry_pool_used >= viewer->config->cache_size * 2) return NULL;
     return &viewer->mem_pool->entry_pool[viewer->mem_pool->entry_pool_used++];
+}
+
+static TruncatedString* pool_alloc_truncated_array(struct DSVViewer *viewer, int count) {
+    CHECK_NULL_RET(viewer, NULL);
+    CHECK_NULL_RET(viewer->mem_pool, NULL);
+    
+    if (viewer->mem_pool->truncated_pool_used + count > viewer->config->cache_size * viewer->config->max_truncated_versions) {
+        return NULL;
+    }
+    
+    TruncatedString* result = &viewer->mem_pool->truncated_pool[viewer->mem_pool->truncated_pool_used];
+    viewer->mem_pool->truncated_pool_used += count;
+    return result;
+}
+
+static StringInternEntry* pool_alloc_intern_entry(struct DSVViewer *viewer) {
+    CHECK_NULL_RET(viewer, NULL);
+    CHECK_NULL_RET(viewer->mem_pool, NULL);
+    
+    if (viewer->mem_pool->intern_entry_pool_used >= viewer->config->intern_table_size) return NULL;
+    return &viewer->mem_pool->intern_entry_pool[viewer->mem_pool->intern_entry_pool_used++];
 }
 
 static char* pool_strdup(struct DSVViewer *viewer, const char* str) {
@@ -67,14 +90,36 @@ static DSVResult init_cache_allocator(struct DSVViewer *viewer) {
     viewer->mem_pool = calloc(1, sizeof(CacheAllocator));
     CHECK_ALLOC(viewer->mem_pool);
 
+    // Allocate entry pool for DisplayCacheEntry structs
     viewer->mem_pool->entry_pool = calloc(viewer->config->cache_size * 2, sizeof(DisplayCacheEntry));
     if (!viewer->mem_pool->entry_pool) {
         SAFE_FREE(viewer->mem_pool);
         return DSV_ERROR_MEMORY;
     }
 
+    // Allocate string pool for character data
     viewer->mem_pool->string_pool = malloc(viewer->config->cache_string_pool_size);
     if (!viewer->mem_pool->string_pool) {
+        SAFE_FREE(viewer->mem_pool->entry_pool);
+        SAFE_FREE(viewer->mem_pool);
+        return DSV_ERROR_MEMORY;
+    }
+
+    // Allocate truncated string array pool (properly aligned)
+    size_t truncated_pool_size = viewer->config->cache_size * viewer->config->max_truncated_versions;
+    viewer->mem_pool->truncated_pool = calloc(truncated_pool_size, sizeof(TruncatedString));
+    if (!viewer->mem_pool->truncated_pool) {
+        SAFE_FREE(viewer->mem_pool->string_pool);
+        SAFE_FREE(viewer->mem_pool->entry_pool);
+        SAFE_FREE(viewer->mem_pool);
+        return DSV_ERROR_MEMORY;
+    }
+
+    // Allocate intern entry pool for StringInternEntry structs
+    viewer->mem_pool->intern_entry_pool = calloc(viewer->config->intern_table_size, sizeof(StringInternEntry));
+    if (!viewer->mem_pool->intern_entry_pool) {
+        SAFE_FREE(viewer->mem_pool->truncated_pool);
+        SAFE_FREE(viewer->mem_pool->string_pool);
         SAFE_FREE(viewer->mem_pool->entry_pool);
         SAFE_FREE(viewer->mem_pool);
         return DSV_ERROR_MEMORY;
@@ -86,6 +131,8 @@ static DSVResult init_cache_allocator(struct DSVViewer *viewer) {
 static void cleanup_cache_allocator(struct DSVViewer *viewer) {
     if (!viewer || !viewer->mem_pool) return;
     
+    SAFE_FREE(viewer->mem_pool->intern_entry_pool);
+    SAFE_FREE(viewer->mem_pool->truncated_pool);
     SAFE_FREE(viewer->mem_pool->entry_pool);
     SAFE_FREE(viewer->mem_pool->string_pool);
     SAFE_FREE(viewer->mem_pool);
@@ -106,13 +153,13 @@ static const char* intern_string(struct DSVViewer *viewer, const char* str) {
         entry = entry->next;
     }
     
-    StringInternEntry *new_entry = malloc(sizeof(StringInternEntry));
-    if (!new_entry) return str; // On failure, just return original string
+    StringInternEntry *new_entry = pool_alloc_intern_entry(viewer);
+    if (!new_entry) return str; // Pool full, just return original string
 
     new_entry->str = pool_strdup(viewer, str);
     if (!new_entry->str) {
-        SAFE_FREE(new_entry);
-        return str; // On failure, just return original string
+        // String pool full, but we already allocated the entry - that's ok since we never free individual items
+        return str; // Return original string
     }
 
     new_entry->next = viewer->intern_table->buckets[index];
@@ -139,18 +186,9 @@ static DSVResult init_string_intern_table(struct DSVViewer *viewer) {
 static void cleanup_string_intern_table(struct DSVViewer *viewer) {
     if (!viewer || !viewer->intern_table) return;
     
-    if (viewer->intern_table->buckets) {
-        for (int i = 0; i < viewer->config->intern_table_size; i++) {
-            StringInternEntry *entry = viewer->intern_table->buckets[i];
-            while (entry) {
-                StringInternEntry *next = entry->next;
-                SAFE_FREE(entry); // Note: string is freed by memory pool
-                entry = next;
-            }
-            viewer->intern_table->buckets[i] = NULL;
-        }
-        SAFE_FREE(viewer->intern_table->buckets);
-    }
+    // Note: Individual entries are pool-allocated and freed with the entire pool
+    // Only need to free the bucket array and the table itself
+    SAFE_FREE(viewer->intern_table->buckets);
     SAFE_FREE(viewer->intern_table);
 }
 
@@ -253,14 +291,8 @@ static DisplayCacheEntry* create_cache_entry(struct DSVViewer *viewer, const cha
     DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
     if (!new_entry) return NULL; // Pool full
     
-    // Allocate the truncated versions array from the memory pool
-    size_t trunc_array_size = sizeof(TruncatedString) * viewer->config->max_truncated_versions;
-    if (viewer->mem_pool->string_pool_used + trunc_array_size <= viewer->config->cache_string_pool_size) {
-        new_entry->truncated = (TruncatedString*)(viewer->mem_pool->string_pool + viewer->mem_pool->string_pool_used);
-        viewer->mem_pool->string_pool_used += trunc_array_size;
-    } else {
-        new_entry->truncated = NULL; // Not enough space
-    }
+    // Allocate the truncated versions array from the proper pool
+    new_entry->truncated = pool_alloc_truncated_array(viewer, viewer->config->max_truncated_versions);
     
     // Initialize entry metadata
     new_entry->hash = hash;

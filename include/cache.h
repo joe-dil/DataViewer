@@ -51,12 +51,23 @@ typedef struct StringInternTable {
     StringInternEntry **buckets;
 } StringInternTable;
 
-// Custom allocator for cache data - never frees individual items
+// Type-safe allocator for cache data - separate pools for different types
 typedef struct CacheAllocator {
+    // Entry pool for DisplayCacheEntry structs
     DisplayCacheEntry* entry_pool;
     int entry_pool_used;
+    
+    // String pool for character data
     char* string_pool;
     size_t string_pool_used;
+    
+    // Separate pool for TruncatedString arrays (properly aligned)
+    TruncatedString* truncated_pool;
+    int truncated_pool_used;
+    
+    // Pool for StringInternEntry structs
+    StringInternEntry* intern_entry_pool;
+    int intern_entry_pool_used;
 } CacheAllocator;
 
 
