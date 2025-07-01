@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "viewer.h"
 #include "display_state.h"
 #include "utils.h"
@@ -7,7 +8,7 @@
 
 // Simple helper: get column width with fallback
 static int get_column_width(DSVViewer *viewer, size_t col) {
-    return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : 12;
+    return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : DEFAULT_COL_WIDTH;
 }
 
 // Simple helper: render field content (common to both header and data)
@@ -19,7 +20,7 @@ static const char* render_column_content(DSVViewer *viewer, size_t col, int disp
 
 // Simple helper: add separator if conditions are met
 static void add_separator_if_needed(DSVViewer *viewer, int y, int x, size_t col, size_t num_fields, int cols) {
-    if (col < num_fields - 1 && x + 3 <= cols) {
+    if (col < num_fields - 1 && x + SEPARATOR_WIDTH <= cols) {
         mvaddstr(y, x, viewer->display_state->separator);
     }
 }
@@ -38,7 +39,7 @@ static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int col
     
     for (size_t col = start_col; col < layout->num_fields; col++) {
         int col_width = get_column_width(viewer, col);
-        int separator_space = (col < layout->num_fields - 1) ? 3 : 0;
+        int separator_space = (col < layout->num_fields - 1) ? SEPARATOR_WIDTH : 0;
         int needed_space = col_width + separator_space;
         
         if (layout->content_width + needed_space > cols) {
@@ -89,7 +90,7 @@ static void render_header_columns(DSVViewer *viewer, int y, size_t start_col, in
         int original_col_width = col_width;
         
         // Header truncation logic
-        int separator_space = (col < layout->num_fields - 1) ? 3 : 0;
+        int separator_space = (col < layout->num_fields - 1) ? SEPARATOR_WIDTH : 0;
         int needed_space = col_width + separator_space;
         if (x + needed_space > cols) {
             col_width = cols - x;
@@ -118,15 +119,15 @@ static void render_header_columns(DSVViewer *viewer, int y, size_t start_col, in
         x += col_width;
         
         // Add separator if not truncated and not last column
-        if (col < layout->num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+        if (col < layout->num_fields - 1 && x + SEPARATOR_WIDTH <= cols && col_width == original_col_width) {
             mvaddstr(y, x, viewer->display_state->separator);
         }
         // Add final column separator if this is the last column
-        else if (col == layout->num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+        else if (col == layout->num_fields - 1 && x + SEPARATOR_WIDTH <= cols && col_width == original_col_width) {
             const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
             mvaddstr(y, x, final_separator);
         }
-        x += 3;
+        x += SEPARATOR_WIDTH;
         
         if (col_width != original_col_width && x >= cols) {
             break;
@@ -173,11 +174,11 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         // Add separator if not last column and space available  
         add_separator_if_needed(viewer, y, x, col, num_fields, cols);
         // Add final column separator if this is the last column
-        if (col == num_fields - 1 && x + 3 <= cols) {
+        if (col == num_fields - 1 && x + SEPARATOR_WIDTH <= cols) {
             const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
             mvaddstr(y, x, final_separator);
         }
-        x += 3;
+        x += SEPARATOR_WIDTH;
     }
 }
 
@@ -193,9 +194,9 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
     int screen_start_row = 0;
     
     if (viewer->display_state->show_header) {
-        attron(COLOR_PAIR(1) | A_UNDERLINE);
+        attron(COLOR_PAIR(COLOR_PAIR_HEADER) | A_UNDERLINE);
         draw_header_row(0, viewer, start_col, viewer->config);
-        attroff(COLOR_PAIR(1) | A_UNDERLINE);
+        attroff(COLOR_PAIR(COLOR_PAIR_HEADER) | A_UNDERLINE);
         screen_start_row = 1;
     }
     
@@ -228,22 +229,22 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
 
 void show_help(void) {
     clear();
-    mvprintw(1, 2, "DSV (Delimiter-Separated Values) Viewer - Help");
-    mvprintw(3, 2, "Navigation:");
-    mvprintw(4, 4, "Arrow Keys    - Jump between fields/scroll");
-    mvprintw(5, 4, "Page Up/Down  - Scroll pages");
-    mvprintw(6, 4, "Home          - Go to beginning");
-    mvprintw(7, 4, "End           - Go to end");
-    mvprintw(8, 4, "Mouse Scroll  - Fine character movement");
-    mvprintw(10, 2, "Commands:");
-    mvprintw(11, 4, "q             - Quit");
-    mvprintw(12, 4, "h             - Show this help");
-    mvprintw(14, 2, "Features:");
-    mvprintw(15, 4, "- Fast loading of large files (memory mapped)");
-    mvprintw(16, 4, "- Auto-detection of delimiters (, | ; tab)");
-    mvprintw(17, 4, "- Arrow keys jump between fields");
-    mvprintw(18, 4, "- Mouse wheel for fine scrolling");
-    mvprintw(20, 2, "Press any key to return...");
+    mvprintw(1, HELP_INDENT_COL, "DSV (Delimiter-Separated Values) Viewer - Help");
+    mvprintw(3, HELP_INDENT_COL, "Navigation:");
+    mvprintw(4, HELP_ITEM_INDENT_COL, "Arrow Keys    - Jump between fields/scroll");
+    mvprintw(5, HELP_ITEM_INDENT_COL, "Page Up/Down  - Scroll pages");
+    mvprintw(6, HELP_ITEM_INDENT_COL, "Home          - Go to beginning");
+    mvprintw(7, HELP_ITEM_INDENT_COL, "End           - Go to end");
+    mvprintw(8, HELP_ITEM_INDENT_COL, "Mouse Scroll  - Fine character movement");
+    mvprintw(HELP_COMMANDS_ROW, HELP_INDENT_COL, "Commands:");
+    mvprintw(11, HELP_ITEM_INDENT_COL, "q             - Quit");
+    mvprintw(12, HELP_ITEM_INDENT_COL, "h             - Show this help");
+    mvprintw(HELP_FEATURES_ROW, HELP_INDENT_COL, "Features:");
+    mvprintw(15, HELP_ITEM_INDENT_COL, "- Fast loading of large files (memory mapped)");
+    mvprintw(16, HELP_ITEM_INDENT_COL, "- Auto-detection of delimiters (, | ; tab)");
+    mvprintw(17, HELP_ITEM_INDENT_COL, "- Arrow keys jump between fields");
+    mvprintw(18, HELP_ITEM_INDENT_COL, "- Mouse wheel for fine scrolling");
+    mvprintw(20, HELP_INDENT_COL, "Press any key to return...");
     refresh();
     getch();
 } 

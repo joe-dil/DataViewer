@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "viewer.h"
 #include "cache.h"
 #include "logging.h"
@@ -23,10 +24,10 @@ static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer);
 // --- Hashing ---
 static uint32_t fnv1a_hash(const char *str) {
     CHECK_NULL_RET(str, 0);
-    uint32_t hash = 0x811c9dc5;
+    uint32_t hash = FNV_OFFSET_BASIS;
     for (const char *p = str; *p; p++) {
         hash ^= (uint8_t)(*p);
-        hash *= 0x01000193;
+        hash *= FNV_PRIME;
     }
     return hash;
 }

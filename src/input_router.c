@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "input_router.h"
 #include "viewer.h"
 #include <ncurses.h>
@@ -65,14 +66,14 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     
                     // If this is the last column, check if it fits completely (including final separator)
                     if (col == viewer->display_state->num_cols - 1) {
-                        if (x + col_width + 3 <= cols) { // Column + final separator space
+                        if (x + col_width + SEPARATOR_WIDTH <= cols) { // Column + final separator space
                             last_column_fully_visible = true;
                         }
                         break;
                     }
                     
                     // For non-last columns, just advance position
-                    x += col_width + 3;
+                    x += col_width + SEPARATOR_WIDTH;
                     if (x >= cols) break; // No point checking further if we're already past screen
                 }
                 

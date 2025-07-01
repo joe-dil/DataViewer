@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "config.h"
 #include "logging.h"
 #include <stdio.h>
@@ -13,28 +14,28 @@ void config_init_defaults(DSVConfig *config) {
     if (!config) return;
 
     // Display
-    config->max_field_len = 1024;
-    config->max_cols = 256;
-    config->max_column_width = 16;
-    config->min_column_width = 4;
+    config->max_field_len = DEFAULT_MAX_FIELD_LEN;
+    config->max_cols = MAX_COLS;
+    config->max_column_width = DEFAULT_MAX_COLUMN_WIDTH;
+    config->min_column_width = DEFAULT_MIN_COLUMN_WIDTH;
     config->buffer_pool_size = 5;
 
     // Cache
-    config->cache_size = 16384;
-    config->cache_string_pool_size = 4 * 1024 * 1024; // 4MB
-    config->intern_table_size = 4096;
-    config->max_truncated_versions = 8;
-    config->cache_threshold_lines = 500;
-    config->cache_threshold_cols = 20;
+    config->cache_size = DEFAULT_CACHE_SIZE;
+    config->cache_string_pool_size = DEFAULT_CACHE_STRING_POOL_SIZE;
+    config->intern_table_size = DEFAULT_INTERN_TABLE_SIZE;
+    config->max_truncated_versions = DEFAULT_MAX_TRUNCATED_VERSIONS;
+    config->cache_threshold_lines = DEFAULT_CACHE_THRESHOLD_LINES;
+    config->cache_threshold_cols = DEFAULT_CACHE_THRESHOLD_COLS;
 
     // I/O
-    config->buffer_size = 8192;
-    config->delimiter_detection_sample_size = 1024;
-    config->line_estimation_sample_size = 4096;
-    config->default_chars_per_line = 80;
+    config->buffer_size = DEFAULT_BUFFER_SIZE;
+    config->delimiter_detection_sample_size = DEFAULT_DELIMITER_SAMPLE_SIZE;
+    config->line_estimation_sample_size = DEFAULT_LINE_SAMPLE_SIZE;
+    config->default_chars_per_line = DEFAULT_CHARS_PER_LINE;
     
     // Analysis
-    config->column_analysis_sample_lines = 1000;
+    config->column_analysis_sample_lines = DEFAULT_COLUMN_ANALYSIS_LINES;
 }
 
 
@@ -64,7 +65,7 @@ DSVResult config_load_from_file(DSVConfig *config, const char *filename) {
         return DSV_ERROR_FILE_IO;
     }
 
-    char line[256];
+    char line[CONFIG_LINE_BUFFER_SIZE];
     int line_num = 0;
     while (fgets(line, sizeof(line), file)) {
         line_num++;

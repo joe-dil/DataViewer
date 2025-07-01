@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "logging.h"
 #include <time.h>
 #include <string.h>
@@ -56,11 +57,11 @@ void log_message(LogLevel level, const char* file, int line, const char* fmt, ..
 
     // Timestamp
     time_t timer;
-    char time_buffer[26];
+    char time_buffer[LOG_TIME_BUFFER_SIZE];
     const struct tm* tm_info;
     time(&timer);
     tm_info = localtime(&timer);
-    strftime(time_buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    strftime(time_buffer, LOG_TIME_BUFFER_SIZE, "%Y-%m-%d %H:%M:%S", tm_info);
 
     // Terminal colors
     const char* color_str = "";
