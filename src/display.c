@@ -1,5 +1,6 @@
 #include "viewer.h"
 #include "display_state.h"
+#include "utils.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
@@ -23,67 +24,72 @@ static void add_separator_if_needed(DSVViewer *viewer, int y, int x, size_t col,
     }
 }
 
-// Draw header row with special formatting and padding
-static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-    (void)rows; // Suppress unused warning
+// Phase 4: Calculate header layout and determine what columns fit
+static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int cols, HeaderLayout *layout) {
+    CHECK_NULL_RET_VOID(viewer);
+    CHECK_NULL_RET_VOID(layout);
     
-    // Clear the line first
-    move(y, 0);
-    clrtoeol();
+    layout->content_width = 0;
+    layout->last_visible_col = start_col;
+    layout->has_more_columns_right = false;
     
-    // Calculate total width needed for all visible columns
-    int total_width = 0;
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, config->max_cols);
-    size_t last_processed_col = start_col;
+    layout->num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, viewer->config->max_cols);
     bool broke_early = false;
     
-    for (size_t col = start_col; col < num_fields; col++) {
+    for (size_t col = start_col; col < layout->num_fields; col++) {
         int col_width = get_column_width(viewer, col);
-        int separator_space = (col < num_fields - 1) ? 3 : 0;
+        int separator_space = (col < layout->num_fields - 1) ? 3 : 0;
         int needed_space = col_width + separator_space;
         
-        if (total_width + needed_space > cols) {
+        if (layout->content_width + needed_space > cols) {
             // If this column would extend past screen, truncate
-            col_width = cols - total_width - separator_space;
+            col_width = cols - layout->content_width - separator_space;
             if (col_width <= 0) {
                 broke_early = true;
                 break;
             }
-            total_width += col_width;
-            last_processed_col = col;
+            layout->content_width += col_width;
+            layout->last_visible_col = col;
             broke_early = true;
             break;
         } else {
-            total_width += needed_space;
-            last_processed_col = col;
+            layout->content_width += needed_space;
+            layout->last_visible_col = col;
         }
     }
     
-    // Check if there are more columns to the right:
-    // Either we broke early OR we finished the loop but haven't shown all columns
-    bool has_more_columns_right = broke_early || (last_processed_col + 1 < num_fields);
+    // Check if there are more columns to the right
+    layout->has_more_columns_right = broke_early || (layout->last_visible_col + 1 < layout->num_fields);
     
     // Extend underline to full width if there are more columns to the right
-    int underline_width = has_more_columns_right ? cols : total_width;
+    layout->underline_width = layout->has_more_columns_right ? cols : layout->content_width;
+}
+
+// Phase 4: Render header background with proper underline
+static void render_header_background(int y, int underline_width) {
+    move(y, 0);
+    clrtoeol();
     
     // Fill spaces for continuous underline
-    move(y, 0);
     for (int i = 0; i < underline_width; i++) {
         addch(' ');
     }
+}
+
+// Phase 4: Render actual header column content
+static void render_header_columns(DSVViewer *viewer, int y, size_t start_col, int cols, const HeaderLayout *layout) {
+    CHECK_NULL_RET_VOID(viewer);
+    CHECK_NULL_RET_VOID(layout);
     
-    // Now render columns over the spaces
     int x = 0;
-    for (size_t col = start_col; col < num_fields; col++) {
+    for (size_t col = start_col; col < layout->num_fields; col++) {
         if (x >= cols) break;
         
         int col_width = get_column_width(viewer, col);
         int original_col_width = col_width;
         
-        // Header truncation logic (keep as-is, it works!)
-        int separator_space = (col < num_fields - 1) ? 3 : 0;
+        // Header truncation logic
+        int separator_space = (col < layout->num_fields - 1) ? 3 : 0;
         int needed_space = col_width + separator_space;
         if (x + needed_space > cols) {
             col_width = cols - x;
@@ -94,7 +100,7 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
         
         // Simplified padding logic for headers
         if (col_width < original_col_width) {
-            // Only pad when truncated (existing behavior)
+            // Only pad when truncated
             char *padded_field = viewer->display_state->buffers.pad_buffer;
             int text_len = strlen(display_string);
             int pad_width = (col_width < viewer->config->max_field_len) ? col_width : viewer->config->max_field_len - 1;
@@ -112,11 +118,11 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
         x += col_width;
         
         // Add separator if not truncated and not last column
-        if (col < num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+        if (col < layout->num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
             mvaddstr(y, x, viewer->display_state->separator);
         }
         // Add final column separator if this is the last column
-        else if (col == num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
+        else if (col == layout->num_fields - 1 && x + 3 <= cols && col_width == original_col_width) {
             const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
             mvaddstr(y, x, final_separator);
         }
@@ -128,8 +134,26 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     }
 }
 
+// Phase 4: Main header drawing function - now much simpler
+static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
+    CHECK_NULL_RET_VOID(viewer);
+    CHECK_NULL_RET_VOID(config);
+    
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    (void)rows; // Suppress unused warning
+    
+    HeaderLayout layout;
+    calculate_header_layout(viewer, start_col, cols, &layout);
+    render_header_background(y, layout.underline_width);
+    render_header_columns(viewer, y, start_col, cols, &layout);
+}
+
 // Draw regular data row (keep simple, it works!)
 static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
+    CHECK_NULL_RET_VOID(viewer);
+    CHECK_NULL_RET_VOID(config);
+    
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     (void)rows; // Suppress unused warning
@@ -158,6 +182,8 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
 }
 
 void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
+    CHECK_NULL_RET_VOID(viewer);
+    
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     

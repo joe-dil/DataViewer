@@ -2,6 +2,7 @@
 #include "viewer.h"
 #include "file_and_parse_data.h"
 #include "display_state.h"
+#include "utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -9,31 +10,35 @@
 // --- Public API Functions ---
 
 void cleanup_column_analysis(ColumnAnalysis *analysis) {
-    if (analysis && analysis->col_widths) {
-        free(analysis->col_widths);
-        analysis->col_widths = NULL;
-    }
+    if (!analysis) return;
+    SAFE_FREE(analysis->col_widths);
 }
 
 // Analyze column widths by sampling the file data
-int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config) {
-    if (!viewer || !viewer->file_data || !config) return -1;
+DSVResult analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config) {
+    CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(viewer->file_data, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(config, DSV_ERROR_INVALID_ARGS);
 
     size_t sample_lines = viewer->file_data->num_lines > (size_t)config->column_analysis_sample_lines ? 
                          (size_t)config->column_analysis_sample_lines : viewer->file_data->num_lines;
     if (sample_lines == 0) {
         viewer->display_state->num_cols = 0;
         viewer->display_state->col_widths = NULL;
-        return 0;
+        return DSV_OK;
     }
 
     int* col_widths_tmp = calloc(config->max_cols, sizeof(int));
-    if (!col_widths_tmp) return -1;
+    CHECK_ALLOC(col_widths_tmp);
 
     size_t max_cols_found = 0;
     
     // Reuse the existing fields buffer instead of allocating new one
     FieldDesc* analysis_fields = viewer->file_data->fields;
+    if (!analysis_fields) {
+        SAFE_FREE(col_widths_tmp);
+        return DSV_ERROR_INVALID_ARGS;
+    }
 
     for (size_t i = 0; i < sample_lines; i++) {
         // Use the main parse_line function instead of duplicate parsing
@@ -61,8 +66,8 @@ int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config) {
     if (num_cols > 0) {
         viewer->display_state->col_widths = malloc(num_cols * sizeof(int));
         if (!viewer->display_state->col_widths) {
-            free(col_widths_tmp);
-            return -1;
+            SAFE_FREE(col_widths_tmp);
+            return DSV_ERROR_MEMORY;
         }
 
         for (size_t i = 0; i < num_cols; i++) {
@@ -75,6 +80,6 @@ int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config) {
         viewer->display_state->num_cols = 0;
     }
 
-    free(col_widths_tmp);
-    return 0;
+    SAFE_FREE(col_widths_tmp);
+    return DSV_OK;
 } 

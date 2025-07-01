@@ -4,10 +4,20 @@
 #include <stddef.h>
 #include <wchar.h>
 #include <locale.h>
+#include <stdbool.h>
 
 // Constants for default separator strings
 #define ASCII_SEPARATOR " | "
 #define UNICODE_SEPARATOR " │ "
+
+// Phase 4: Helper structure for complex header calculations
+typedef struct {
+    int content_width;
+    int underline_width;
+    size_t last_visible_col;
+    bool has_more_columns_right;
+    size_t num_fields;
+} HeaderLayout;
 
 // Temporary buffer checkout system for reusable work buffers
 typedef struct {

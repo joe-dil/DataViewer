@@ -45,14 +45,8 @@ static DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfi
 static void cleanup_viewer_resources(struct DSVViewer *viewer) {
     if (!viewer || !viewer->file_data) return;
 
-    if (viewer->file_data->fields) {
-        free(viewer->file_data->fields);
-        viewer->file_data->fields = NULL;
-    }
-    if (viewer->file_data->line_offsets) {
-        free(viewer->file_data->line_offsets);
-        viewer->file_data->line_offsets = NULL;
-    }
+    SAFE_FREE(viewer->file_data->fields);
+    SAFE_FREE(viewer->file_data->line_offsets);
 }
 
 // Full cleanup function, moved from parser.c
@@ -65,21 +59,12 @@ void cleanup_viewer(DSVViewer *viewer) {
 
     if (viewer->display_state) {
         cleanup_buffer_pool(&viewer->display_state->buffers);
-        if (viewer->display_state->col_widths) {
-            free(viewer->display_state->col_widths);
-            viewer->display_state->col_widths = NULL;
-        }
-        free(viewer->display_state);
-        viewer->display_state = NULL;
+        SAFE_FREE(viewer->display_state->col_widths);
+        SAFE_FREE(viewer->display_state);
     }
 
-    if (viewer->file_data) {
-        free(viewer->file_data);
-        viewer->file_data = NULL;
-    }
+    SAFE_FREE(viewer->file_data);
 }
-
-
 
 // --- Configuration Management ---
 
@@ -105,9 +90,71 @@ static void initialize_viewer_cache(struct DSVViewer *viewer, const DSVConfig *c
     }
 }
 
+// --- Phase 4.2: Split Initialization Phases ---
+
+// Phase 4.2: Initialize file system components
+static DSVResult init_file_system(DSVViewer *viewer, const char *filename, char delimiter) {
+    CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(filename, DSV_ERROR_INVALID_ARGS);
+    
+    double phase_time = get_time_ms();
+    
+    if (load_file_data(viewer, filename) != DSV_OK) {
+        LOG_ERROR("Failed to load file data.");
+        return DSV_ERROR_FILE_IO;
+    }
+    
+    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter, viewer->config);
+    
+    printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
+    return DSV_OK;
+}
+
+// Phase 4.2: Initialize analysis and parsing systems
+static DSVResult init_analysis_system(DSVViewer *viewer) {
+    CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(viewer->config, DSV_ERROR_INVALID_ARGS);
+    
+    double phase_time = get_time_ms();
+    
+    viewer->file_data->fields = malloc(viewer->config->max_cols * sizeof(FieldDesc));
+    CHECK_ALLOC(viewer->file_data->fields);
+    
+    if (scan_file_data(viewer, viewer->config) != DSV_OK) {
+        LOG_ERROR("Failed to scan file data.");
+        return DSV_ERROR_PARSE;
+    }
+    
+    printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
+    return DSV_OK;
+}
+
+// Phase 4.2: Initialize display and analysis systems
+static DSVResult init_display_system(DSVViewer *viewer) {
+    CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(viewer->config, DSV_ERROR_INVALID_ARGS);
+    
+    double phase_time = get_time_ms();
+    
+    if (analyze_column_widths(viewer, viewer->config) != DSV_OK) {
+        LOG_ERROR("Failed to analyze columns.");
+        return DSV_ERROR_DISPLAY;
+    }
+    
+    configure_viewer_settings(viewer, viewer->config);
+    initialize_viewer_cache(viewer, viewer->config);
+    
+    printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
+    return DSV_OK;
+}
+
 // --- Main Initialization Function ---
 
 DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, const DSVConfig *config) {
+    CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(filename, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(config, DSV_ERROR_INVALID_ARGS);
+    
     DSVResult res;
     double phase_time, total_time;
     total_time = get_time_ms();
@@ -119,36 +166,16 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
 
     // File operations
-    phase_time = get_time_ms();
-    if (load_file_data(viewer, filename) != DSV_OK) {
-        LOG_ERROR("Failed to load file data.");
-        return DSV_ERROR_FILE_IO;
-    }
-    viewer->file_data->delimiter = detect_file_delimiter(viewer->file_data->data, viewer->file_data->length, delimiter, config);
-    printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
+    res = init_file_system(viewer, filename, delimiter);
+    if (res != DSV_OK) return res;
 
     // Data structures
-    phase_time = get_time_ms();
-    viewer->file_data->fields = malloc(config->max_cols * sizeof(FieldDesc));
-    if (!viewer->file_data->fields) {
-        LOG_ERROR("Failed to allocate for fields");
-        return DSV_ERROR_MEMORY;
-    }
-    if (scan_file_data(viewer, config) != DSV_OK) {
-        LOG_ERROR("Failed to scan file data.");
-        return DSV_ERROR_PARSE;
-    }
-    printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
+    res = init_analysis_system(viewer);
+    if (res != DSV_OK) return res;
 
     // Display features
-    phase_time = get_time_ms();
-    if (analyze_column_widths(viewer, config) != 0) {
-        LOG_ERROR("Failed to analyze columns.");
-        return DSV_ERROR_DISPLAY;
-    }
-    configure_viewer_settings(viewer, config);
-    initialize_viewer_cache(viewer, config);
-    printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
+    res = init_display_system(viewer);
+    if (res != DSV_OK) return res;
 
     printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
     LOG_INFO("Viewer initialized successfully.");

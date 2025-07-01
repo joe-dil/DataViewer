@@ -21,6 +21,6 @@ typedef struct {
 void cleanup_column_analysis(ColumnAnalysis *analysis);
 
 // Analyze column widths and store them in viewer->display_state
-int analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config);
+DSVResult analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config);
 
 #endif // ANALYSIS_H 
