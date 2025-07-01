@@ -165,7 +165,7 @@ EncodingDetectionResult detect_file_encoding(const char *data, size_t length, co
         FileEncoding forced = parse_encoding_name(config->force_encoding);
         if (forced != ENCODING_UNKNOWN) {
             EncodingDetectionResult result = {forced, 1.0, 0, get_encoding_name(forced)};
-            LOG_INFO("Using forced encoding: %s", result.encoding_name);
+            LOG_DEBUG("Using forced encoding: %s", result.encoding_name);
             return result;
         }
     }
@@ -178,14 +178,14 @@ EncodingDetectionResult detect_file_encoding(const char *data, size_t length, co
     // Try BOM detection first
     EncodingDetectionResult bom_result = detect_bom(data, length);
     if (bom_result.detected_encoding != ENCODING_UNKNOWN) {
-        LOG_INFO("Detected encoding via BOM: %s", bom_result.encoding_name);
+        LOG_DEBUG("Detected encoding via BOM: %s", bom_result.encoding_name);
         return bom_result;
     }
     
     // Fall back to heuristic detection
     EncodingDetectionResult heuristic_result = detect_heuristic(data, length, config);
-    LOG_INFO("Detected encoding via heuristics: %s (confidence: %.2f)", 
-             heuristic_result.encoding_name, heuristic_result.confidence);
+    LOG_DEBUG("Detected encoding via heuristics: %s (confidence: %.2f)", 
+              heuristic_result.encoding_name, heuristic_result.confidence);
     
     return heuristic_result;
 }
