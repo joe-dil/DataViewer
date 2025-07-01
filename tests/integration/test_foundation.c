@@ -320,6 +320,85 @@ void test_performance_parsing_benchmark() {
 }
 
 // =============================================================================
+// ENCODING INTEGRATION TESTS
+// =============================================================================
+
+void test_encoding_detection_integration() {
+    DSVConfig config;
+    config_init_defaults(&config);
+    
+    // Test 1: ASCII file detection
+    create_test_csv_file("test_ascii.csv", "Name,Age,City\nJohn,25,Boston\n");
+    
+    DSVViewer viewer1 = {0};
+    DSVResult result = init_viewer(&viewer1, "test_ascii.csv", 0, &config);
+    ASSERT_EQ(result, DSV_OK);
+    ASSERT_EQ(viewer1.file_data->detected_encoding, ENCODING_ASCII);
+    cleanup_viewer(&viewer1);
+    unlink("test_ascii.csv");
+    
+    // Test 2: UTF-8 file detection  
+    create_test_csv_file("test_utf8.csv", "Name,Age,City\nJean,25,Montréal\n");
+    
+    DSVViewer viewer2 = {0};
+    result = init_viewer(&viewer2, "test_utf8.csv", 0, &config);
+    ASSERT_EQ(result, DSV_OK);
+    ASSERT_EQ(viewer2.file_data->detected_encoding, ENCODING_UTF8);
+    cleanup_viewer(&viewer2);
+    unlink("test_utf8.csv");
+    
+    printf("✓ Encoding detection integration passed\n");
+}
+
+void test_encoding_force_override_integration() {
+    DSVConfig config;
+    config_init_defaults(&config);
+    config.force_encoding = "latin-1";
+    
+    // Create UTF-8 file but force it to be treated as Latin-1
+    create_test_csv_file("test_force.csv", "Name,Age,City\nJean,25,Test\n");
+    
+    DSVViewer viewer = {0};
+    DSVResult result = init_viewer(&viewer, "test_force.csv", 0, &config);
+    ASSERT_EQ(result, DSV_OK);
+    ASSERT_EQ(viewer.file_data->detected_encoding, ENCODING_LATIN1);
+    
+    cleanup_viewer(&viewer);
+    unlink("test_force.csv");
+    
+    printf("✓ Encoding force override integration passed\n");
+}
+
+void test_encoding_bom_handling_integration() {
+    DSVConfig config;
+    config_init_defaults(&config);
+    
+    // Create UTF-8 file with BOM
+    FILE* f = fopen("test_bom.csv", "wb");
+    ASSERT_NOT_NULL(f);
+    
+    // Write UTF-8 BOM: EF BB BF
+    unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+    fwrite(bom, 1, 3, f);
+    fputs("Name,Age,City\nJohn,25,Boston\n", f);
+    fclose(f);
+    
+    DSVViewer viewer = {0};
+    DSVResult result = init_viewer(&viewer, "test_bom.csv", 0, &config);
+    ASSERT_EQ(result, DSV_OK);
+    ASSERT_EQ(viewer.file_data->detected_encoding, ENCODING_UTF8_BOM);
+    
+    // Verify BOM was skipped by checking first character isn't the BOM
+    ASSERT_NE(viewer.file_data->data[0], (char)0xEF);
+    ASSERT_EQ(viewer.file_data->data[0], 'N'); // Should start with "Name"
+    
+    cleanup_viewer(&viewer);
+    unlink("test_bom.csv");
+    
+    printf("✓ Encoding BOM handling integration passed\n");
+}
+
+// =============================================================================
 // INTEGRATION TEST SUITE
 // =============================================================================
 
@@ -335,6 +414,9 @@ TestCase foundation_tests[] = {
     {"Memory Large Field", test_memory_large_field_handling},
     {"Performance File Loading", test_performance_file_loading},
     {"Performance Parsing", test_performance_parsing_benchmark},
+    {"Encoding Detection Integration", test_encoding_detection_integration},
+    {"Encoding Force Override Integration", test_encoding_force_override_integration},
+    {"Encoding BOM Handling Integration", test_encoding_bom_handling_integration},
 };
 
 int foundation_suite_size = sizeof(foundation_tests) / sizeof(TestCase); 
