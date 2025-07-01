@@ -17,27 +17,28 @@
 static DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfig *config) {
     viewer->config = config;
 
-    viewer->display_state = malloc(sizeof(DisplayState));
+    viewer->display_state = calloc(1, sizeof(DisplayState));
     if (!viewer->display_state) {
         LOG_ERROR("Failed to allocate for DisplayState");
         return DSV_ERROR_MEMORY;
     }
-    memset(viewer->display_state, 0, sizeof(DisplayState));
     
     // Initialize buffer pool
     if (init_buffer_pool(&viewer->display_state->buffers, config) != DSV_OK) {
         LOG_ERROR("Failed to initialize buffer pool");
         free(viewer->display_state);
+        viewer->display_state = NULL;
         return DSV_ERROR_MEMORY;
     }
 
-    viewer->file_data = malloc(sizeof(FileAndParseData));
+    viewer->file_data = calloc(1, sizeof(FileAndParseData));
     if (!viewer->file_data) {
         LOG_ERROR("Failed to allocate for FileAndParseData");
+        cleanup_buffer_pool(&viewer->display_state->buffers);
         free(viewer->display_state);
+        viewer->display_state = NULL;
         return DSV_ERROR_MEMORY;
     }
-    memset(viewer->file_data, 0, sizeof(FileAndParseData));
     return DSV_OK;
 }
 

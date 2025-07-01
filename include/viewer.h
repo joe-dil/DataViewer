@@ -14,6 +14,7 @@
 #include "display_state.h"
 #include "error_context.h"
 #include "config.h"
+#include "input_router.h"
 
 // General constants
 #define MAX_COLS 256
