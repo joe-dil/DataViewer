@@ -19,9 +19,9 @@ typedef struct {
     size_t num_fields;
 } HeaderLayout;
 
-// Temporary buffer checkout system for reusable work buffers
+// Simple work buffers for direct access
 typedef struct {
-    // Named buffers for specific purposes
+    // Named buffers for specific purposes  
     char *render_buffer;      // Primary field rendering
     char *pad_buffer;         // Padding operations
     char *cache_buffer;       // Cache lookups
@@ -29,7 +29,7 @@ typedef struct {
     char *analysis_buffer;    // Analysis computations
     wchar_t *wide_buffer;     // Wide character support
     
-    // Metadata for buffer management
+    // Simplified metadata (mostly unused now)
     int *buffer_sizes;
     int *is_in_use;
     const char** buffer_names;

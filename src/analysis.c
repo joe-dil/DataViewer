@@ -1,7 +1,9 @@
+#include "field_desc.h"
+#include "display_state.h"
+#include "file_and_parse_data.h"
+#include "config.h"
 #include "analysis.h"
 #include "viewer.h"
-#include "file_and_parse_data.h"
-#include "display_state.h"
 #include "utils.h"
 #include <stdlib.h>
 #include <string.h>

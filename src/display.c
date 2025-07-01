@@ -1,6 +1,7 @@
 #include "constants.h"
 #include "viewer.h"
 #include "display_state.h"
+#include "cache.h"
 #include "utils.h"
 #include <ncurses.h>
 #include <wchar.h>

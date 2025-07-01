@@ -1,10 +1,10 @@
 #include "viewer.h"
+#include "config.h"
 #include <string.h>
 #include <locale.h>
 #include <ncurses.h>
 #include "logging.h"
 #include "error_context.h"
-#include "config.h"
 
 int main(int argc, char *argv[]) {
     init_logging(LOG_LEVEL_INFO, "-"); // Log to stderr

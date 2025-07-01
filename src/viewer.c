@@ -2,6 +2,7 @@
 #include "config.h"
 #include "file_io.h"
 #include "analysis.h"
+#include "cache.h"
 #include "utils.h"
 #include "logging.h"
 #include "error_context.h"

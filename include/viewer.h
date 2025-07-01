@@ -1,38 +1,26 @@
 #ifndef VIEWER_H
 #define VIEWER_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <locale.h>
-#include <stdbool.h>
-#include <stdint.h>
-
-// Include headers for modularized components
-// These headers contain the necessary struct definitions and function prototypes.
-#include "cache.h"
-#include "display_state.h"
+#include <stddef.h>
 #include "error_context.h"
-#include "config.h"
-#include "input_router.h"
-
-// General constants
-#define MAX_COLS 256
-#define BUFFER_SIZE 8192
-
-// Include component headers that define data structures.
-// This ordering is important to resolve dependencies.
 #include "field_desc.h"
+#include "display_state.h"
 #include "file_and_parse_data.h"
+#include "config.h"
+
+// Forward declarations for cache components
+struct DisplayCache;
+struct CacheAllocator;
+struct StringInternTable;
 
 // Core data structure
 typedef struct DSVViewer {
-    // Pointers to modularized components.
+    // Pointers to cache components (forward declared)
     struct DisplayCache *display_cache;
     struct CacheAllocator *mem_pool;
     struct StringInternTable *intern_table;
     
-    // New component pointer for our incremental refactor
+    // Component pointers (full definitions available)
     DisplayState *display_state;
     FileAndParseData *file_data;
     const DSVConfig *config;
