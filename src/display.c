@@ -26,7 +26,8 @@ static void add_separator_if_needed(DSVViewer *viewer, int y, int x, size_t col,
     }
 }
 
-// Phase 4: Calculate header layout and determine what columns fit
+// Calculate which columns fit on screen and how to lay them out
+// Handles column width calculation, truncation, and overflow indicators
 static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int cols, HeaderLayout *layout) {
     CHECK_NULL_RET_VOID(viewer);
     CHECK_NULL_RET_VOID(layout);
@@ -38,6 +39,7 @@ static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int col
     layout->num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, viewer->config->max_cols);
     bool broke_early = false;
     
+    // Try to fit as many columns as possible within screen width
     for (size_t col = start_col; col < layout->num_fields; col++) {
         int col_width = get_column_width(viewer, col);
         int separator_space = (col < layout->num_fields - 1) ? SEPARATOR_WIDTH : 0;

@@ -72,8 +72,30 @@ typedef struct CacheAllocator {
 
 
 // --- Public Function Declarations for the Cache Subsystem ---
+
+/**
+ * @brief Initialize display cache system for string truncation performance.
+ * Caches truncated string versions to avoid repeated computation.
+ * @param viewer Viewer instance to initialize cache for
+ * @param config Configuration specifying cache sizes and thresholds
+ * @return DSV_OK on success, DSV_ERROR_MEMORY on allocation failure
+ */
 DSVResult init_cache_system(struct DSVViewer *viewer, const DSVConfig *config);
+
+/**
+ * @brief Clean up all cache resources and memory pools.
+ * @param viewer Viewer instance (safe to call with NULL)
+ */
 void cleanup_cache_system(struct DSVViewer *viewer);
+
+/**
+ * @brief Get truncated version of string, using cache for performance.
+ * Returns cached version if available, otherwise computes and caches result.
+ * @param viewer Viewer instance with initialized cache
+ * @param original Original string to truncate
+ * @param width Maximum display width in characters
+ * @return Pointer to truncated string (may be original if no truncation needed)
+ */
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 
 #endif // CACHE_H 

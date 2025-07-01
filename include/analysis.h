@@ -17,10 +17,20 @@ typedef struct {
     size_t total_fields;       // Total fields analyzed
 } ColumnAnalysis;
 
-// Clean up analysis results
+/**
+ * @brief Clean up analysis results and free allocated memory.
+ * @param analysis Analysis structure to cleanup (safe to call with NULL)
+ */
 void cleanup_column_analysis(ColumnAnalysis *analysis);
 
-// Analyze column widths and store them in viewer->display_state
+/**
+ * @brief Analyze CSV data to determine optimal column display widths.
+ * Samples file content to calculate column widths, respecting min/max limits.
+ * Results are stored in viewer->display_state for rendering.
+ * @param viewer Viewer instance with loaded file data
+ * @param config Configuration with column width limits and sample size
+ * @return DSV_OK on success, DSV_ERROR_MEMORY on allocation failure
+ */
 DSVResult analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config);
 
 #endif // ANALYSIS_H 

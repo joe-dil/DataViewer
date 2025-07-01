@@ -6,12 +6,12 @@
 
 // --- Core Parsing Logic ---
 
-// A state machine for the parser to improve readability.
+// CSV parsing state machine for handling quotes and delimiters
 typedef struct {
-    int in_quotes;
-    int needs_unescaping;
-    size_t field_start;
-    size_t field_count;
+    int in_quotes;         // Currently inside a quoted field
+    int needs_unescaping;  // Field contains escaped quotes ("")
+    size_t field_start;    // Byte offset where current field starts
+    size_t field_count;    // Number of fields parsed so far
 } ParseState;
 
 // Helper to record a new field, avoiding duplicate code.
@@ -27,13 +27,12 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
         return 0;
     }
 
-    // Cache frequently accessed variables from viewer->file_data to local variables.
-    // This reduces pointer dereferencing overhead inside the loop.
+    // Cache frequently accessed variables to reduce pointer dereferencing overhead
     const char *data = viewer->file_data->data;
     const size_t length = viewer->file_data->length;
     const char delimiter = viewer->file_data->delimiter;
 
-    // Initialize the state machine for the parser.
+    // Initialize parsing state machine
     ParseState state = {
         .in_quotes = 0,
         .needs_unescaping = 0,
@@ -45,10 +44,10 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     while (i < length) {
         char c = data[i];
 
-        // State: Inside a quoted field
         if (state.in_quotes) {
+            // Inside quoted field - only quotes can change state
             if (c == '"') {
-                // Check for an escaped quote ("")
+                // Handle escaped quotes: "" becomes "
                 if (i + 1 < length && data[i + 1] == '"') {
                     state.needs_unescaping = 1;
                     i++; // Skip the second quote; loop will increment over the first
@@ -56,25 +55,23 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
                     state.in_quotes = 0; // This is a closing quote
                 }
             }
-        // State: Not in a quoted field
         } else {
+            // Outside quoted field - delimiters and quotes matter
             if (c == '"') {
                 state.in_quotes = 1; // Start of a quoted field
             } else if (c == delimiter) {
-                // End of a field, record it
+                // End of field - record it and start next
                 record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
                 state.field_start = i + 1;
                 state.needs_unescaping = 0; // Reset for next field
             } else if (c == '\n') {
-                // End of the line, exit the loop
-                break;
+                break; // End of line
             }
         }
         i++;
     }
     
-    // After the loop, there's always one last field to record.
-    // This handles lines that don't end with a delimiter or newline.
+    // Record the final field (lines may not end with delimiter)
     record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
 
     viewer->file_data->num_fields = state.field_count;

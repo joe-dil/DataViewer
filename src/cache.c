@@ -30,6 +30,7 @@ static const char* add_truncated_version(struct DSVViewer *viewer, DisplayCacheE
 static DisplayCacheEntry* create_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash, int width);
 
 // --- Hashing ---
+// FNV-1a hash function - fast and well-distributed for string keys
 static uint32_t fnv1a_hash(const char *str) {
     CHECK_NULL_RET(str, 0);
     uint32_t hash = FNV_OFFSET_BASIS;
@@ -193,6 +194,7 @@ static void cleanup_string_intern_table(struct DSVViewer *viewer) {
 }
 
 // --- Display Cache ---
+// Calculate display width accounting for multi-byte Unicode characters
 static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(str, 0);
@@ -203,9 +205,10 @@ static int calculate_display_width(struct DSVViewer* viewer, const char* str) {
     
     mbstowcs(wcs, str, viewer->config->max_field_len);
     int width = wcswidth(wcs, viewer->config->max_field_len);
-    return (width < 0) ? strlen(str) : width;
+    return (width < 0) ? strlen(str) : width; // Fallback for invalid sequences
 }
 
+// Truncate string to specified display width, preserving Unicode boundaries
 static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, int width) {
     if (!viewer || !src || !dest || !viewer->display_state) return;
     
@@ -218,11 +221,12 @@ static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, 
         return;
     }
     
+    // Convert to wide chars, truncate by display width, convert back
     mbstowcs(wcs, src, viewer->config->max_field_len);
     int current_width = 0, i = 0;
     for (i = 0; wcs[i] != '\0'; ++i) {
         int char_width = wcwidth(wcs[i]);
-        if (char_width < 0) char_width = 1;
+        if (char_width < 0) char_width = 1; // Control chars get width 1
         if (current_width + char_width > width) break;
         current_width += char_width;
     }
