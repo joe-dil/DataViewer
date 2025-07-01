@@ -21,6 +21,12 @@ static const char* intern_string(struct DSVViewer *viewer, const char* str);
 static char* pool_strdup(struct DSVViewer *viewer, const char* str);
 static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer);
 
+// --- Cache Entry Management Helpers ---
+static DisplayCacheEntry* find_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash);
+static const char* find_truncated_version(DisplayCacheEntry *entry, int width);
+static const char* add_truncated_version(struct DSVViewer *viewer, DisplayCacheEntry *entry, const char* original, int width);
+static DisplayCacheEntry* create_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash, int width);
+
 // --- Hashing ---
 static uint32_t fnv1a_hash(const char *str) {
     CHECK_NULL_RET(str, 0);
@@ -186,40 +192,67 @@ static void truncate_str(struct DSVViewer* viewer, const char* src, char* dest, 
     wcstombs(dest, wcs, viewer->config->max_field_len);
 }
 
-const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width) {
-    CHECK_NULL_RET(viewer, original);
-    CHECK_NULL_RET(original, NULL);
-    if (!viewer->display_cache) return original;
-    
-    size_t orig_len = strlen(original);
-    if (orig_len <= (size_t)width) return original;
-    
-    uint32_t hash = fnv1a_hash(original);
-    uint32_t index = hash % viewer->config->cache_size;
+// --- Cache Entry Management Helpers ---
 
+// Find existing cache entry for a string
+static DisplayCacheEntry* find_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash) {
+    CHECK_NULL_RET(viewer, NULL);
+    CHECK_NULL_RET(original, NULL);
+    CHECK_NULL_RET(viewer->display_cache, NULL);
+    
+    uint32_t index = hash % viewer->config->cache_size;
     for (DisplayCacheEntry *entry = viewer->display_cache->entries[index]; entry; entry = entry->next) {
         if (entry->hash == hash && strcmp(entry->original_string, original) == 0) {
-            for (int i = 0; i < entry->truncated_count; i++) {
-                if (entry->truncated[i].width == width) return entry->truncated[i].str;
-            }
-            char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
-            if (!truncated_buffer) return original;
-            
-            truncate_str(viewer, original, truncated_buffer, width);
-            if (entry->truncated_count < viewer->config->max_truncated_versions && entry->truncated) {
-                int i = entry->truncated_count++;
-                entry->truncated[i].width = width;
-                entry->truncated[i].str = pool_strdup(viewer, truncated_buffer);
-                return entry->truncated[i].str;
-            } else {
-                return truncated_buffer; // Cache full for this entry
-            }
+            return entry;
         }
     }
+    return NULL;
+}
+
+// Find specific width version in an existing cache entry
+static const char* find_truncated_version(DisplayCacheEntry *entry, int width) {
+    CHECK_NULL_RET(entry, NULL);
+    
+    for (int i = 0; i < entry->truncated_count; i++) {
+        if (entry->truncated[i].width == width) {
+            return entry->truncated[i].str;
+        }
+    }
+    return NULL;
+}
+
+// Add new truncated version to existing cache entry
+static const char* add_truncated_version(struct DSVViewer *viewer, DisplayCacheEntry *entry, const char* original, int width) {
+    CHECK_NULL_RET(viewer, NULL);
+    CHECK_NULL_RET(entry, NULL);
+    CHECK_NULL_RET(original, NULL);
+    
+    char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
+    if (!truncated_buffer) return original;
+    
+    // Create the truncated string
+    truncate_str(viewer, original, truncated_buffer, width);
+    
+    // Try to add to cache if there's space
+    if (entry->truncated_count < viewer->config->max_truncated_versions && entry->truncated) {
+        int i = entry->truncated_count++;
+        entry->truncated[i].width = width;
+        entry->truncated[i].str = pool_strdup(viewer, truncated_buffer);
+        return entry->truncated[i].str;
+    }
+    
+    // Cache full for this entry, return temporary buffer
+    return truncated_buffer;
+}
+
+// Create completely new cache entry
+static DisplayCacheEntry* create_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash, int width) {
+    CHECK_NULL_RET(viewer, NULL);
+    CHECK_NULL_RET(original, NULL);
     
     DisplayCacheEntry *new_entry = pool_alloc_entry(viewer);
-    if (!new_entry) return original; // Pool full
-        
+    if (!new_entry) return NULL; // Pool full
+    
     // Allocate the truncated versions array from the memory pool
     size_t trunc_array_size = sizeof(TruncatedString) * viewer->config->max_truncated_versions;
     if (viewer->mem_pool->string_pool_used + trunc_array_size <= viewer->config->cache_string_pool_size) {
@@ -228,32 +261,70 @@ const char* get_truncated_string(struct DSVViewer *viewer, const char* original,
     } else {
         new_entry->truncated = NULL; // Not enough space
     }
-        
-    char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
-    if (!truncated_buffer) return original;
     
-    truncate_str(viewer, original, truncated_buffer, width);
-
+    // Initialize entry metadata
     new_entry->hash = hash;
     new_entry->original_string = (char*)intern_string(viewer, original);
     new_entry->display_width = calculate_display_width(viewer, original);
     new_entry->truncated_count = 0;
-
-    if (new_entry->truncated) {
-        new_entry->truncated_count = 1;
-        new_entry->truncated[0].width = width;
-        new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
+    
+    // Create first truncated version
+    char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
+    if (truncated_buffer) {
+        truncate_str(viewer, original, truncated_buffer, width);
+        
+        if (new_entry->truncated) {
+            new_entry->truncated_count = 1;
+            new_entry->truncated[0].width = width;
+            new_entry->truncated[0].str = pool_strdup(viewer, truncated_buffer);
+        }
     }
     
+    // Add to hash table
+    uint32_t index = hash % viewer->config->cache_size;
     new_entry->next = viewer->display_cache->entries[index];
     viewer->display_cache->entries[index] = new_entry;
+    
+    return new_entry;
+}
 
-    if (new_entry->truncated && new_entry->truncated[0].str) {
+// Main truncated string function - now much simpler and focused
+const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width) {
+    CHECK_NULL_RET(viewer, original);
+    CHECK_NULL_RET(original, NULL);
+    if (!viewer->display_cache) return original;
+    
+    // Early return if no truncation needed
+    size_t orig_len = strlen(original);
+    if (orig_len <= (size_t)width) return original;
+    
+    uint32_t hash = fnv1a_hash(original);
+    
+    // Try to find existing cache entry
+    DisplayCacheEntry *entry = find_cache_entry(viewer, original, hash);
+    if (entry) {
+        // Check if we already have this width cached
+        const char *cached_version = find_truncated_version(entry, width);
+        if (cached_version) return cached_version;
+        
+        // Add new version to existing entry
+        return add_truncated_version(viewer, entry, original, width);
+    }
+    
+    // Create new cache entry
+    DisplayCacheEntry *new_entry = create_cache_entry(viewer, original, hash, width);
+    if (new_entry && new_entry->truncated && new_entry->truncated[0].str) {
         return new_entry->truncated[0].str;
     }
-
-    // Fallback if allocation failed
-    return truncated_buffer;
+    
+    // Fallback: create truncated string in temporary buffer
+    char *truncated_buffer = viewer->display_state->buffers.cache_buffer;
+    if (truncated_buffer) {
+        truncate_str(viewer, original, truncated_buffer, width);
+        return truncated_buffer;
+    }
+    
+    return original;
 }
 
 static DSVResult init_display_cache(struct DSVViewer *viewer) {
