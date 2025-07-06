@@ -22,8 +22,5 @@ bool is_row_selected(const ViewState *state, size_t row);
 void clear_all_selections(ViewState *state);
 size_t get_selected_rows(const ViewState *state, size_t **rows);
 void cleanup_row_selection(ViewState *state);
-void select_range(ViewState *state, size_t from, size_t to);
-void begin_selection_mode(ViewState *state, size_t anchor);
-void update_selection_mode(ViewState *state, size_t current);
 
 #endif // NAVIGATION_H 

@@ -35,8 +35,6 @@ typedef struct {
         bool *row_selected;        // Bitmap for row selection
         size_t selection_count;    // Number of selected rows
         size_t total_rows;         // Total rows in view (for bounds checking)
-        size_t selection_anchor;   // Anchor point for shift-selection
-        bool in_selection_mode;    // Currently doing shift-selection
     } table_view;
     
     // Future panel states can be added here

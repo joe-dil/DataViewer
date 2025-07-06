@@ -402,20 +402,19 @@ void show_help(void) {
     
     mvprintw(8, HELP_INDENT_COL, "Row Selection:");
     mvprintw(9, HELP_ITEM_INDENT_COL, "Space         - Toggle selection for the current row");
-    mvprintw(10, HELP_ITEM_INDENT_COL, "Shift+Up/Down - Select a range of rows");
-    mvprintw(11, HELP_ITEM_INDENT_COL, "A or ESC      - Clear all selections");
+    mvprintw(10, HELP_ITEM_INDENT_COL, "A or ESC      - Clear all selections");
 
-    mvprintw(13, HELP_INDENT_COL, "Views:");
-    mvprintw(14, HELP_ITEM_INDENT_COL, "v             - Create a new view from selected rows");
-    mvprintw(15, HELP_ITEM_INDENT_COL, "Tab/Shift+Tab - Cycle through open views");
-    mvprintw(16, HELP_ITEM_INDENT_COL, "x             - Close the current view (except Main)");
+    mvprintw(12, HELP_INDENT_COL, "Views:");
+    mvprintw(13, HELP_ITEM_INDENT_COL, "v             - Create a new view from selected rows");
+    mvprintw(14, HELP_ITEM_INDENT_COL, "Tab/Shift+Tab - Cycle through open views");
+    mvprintw(15, HELP_ITEM_INDENT_COL, "x             - Close the current view (except Main)");
 
-    mvprintw(18, HELP_INDENT_COL, "General:");
-    mvprintw(19, HELP_ITEM_INDENT_COL, "y             - Copy current cell to clipboard");
-    mvprintw(20, HELP_ITEM_INDENT_COL, "h             - Show this help screen");
-    mvprintw(21, HELP_ITEM_INDENT_COL, "q             - Quit the application");
+    mvprintw(17, HELP_INDENT_COL, "General:");
+    mvprintw(18, HELP_ITEM_INDENT_COL, "y             - Copy current cell to clipboard");
+    mvprintw(19, HELP_ITEM_INDENT_COL, "h             - Show this help screen");
+    mvprintw(20, HELP_ITEM_INDENT_COL, "q             - Quit the application");
 
-    mvprintw(23, HELP_INDENT_COL, "Press any key to return...");
+    mvprintw(22, HELP_INDENT_COL, "Press any key to return...");
     refresh();
     getch();
 } 

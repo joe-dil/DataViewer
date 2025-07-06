@@ -25,6 +25,6 @@ View* create_main_view(ViewState *initial_state, size_t total_rows);
 void switch_to_next_view(ViewManager *manager);
 void switch_to_prev_view(ViewManager *manager);
 void close_current_view(ViewManager *manager);
-View* create_view_from_selection(ViewManager *manager, const ViewState *source_state, size_t *selected_rows, size_t count);
+View* create_view_from_selection(ViewManager *manager, size_t *selected_rows, size_t count);
 
 #endif // VIEW_MANAGER_H 

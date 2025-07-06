@@ -121,7 +121,6 @@ void close_current_view(ViewManager *manager) {
 }
 
 View* create_view_from_selection(ViewManager *manager, 
-                               const ViewState *source_state,
                                size_t *selected_rows, 
                                size_t count) {
     if (!manager || manager->view_count >= manager->max_views || !selected_rows || count == 0) {

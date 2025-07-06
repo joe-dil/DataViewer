@@ -211,8 +211,6 @@ void init_row_selection(ViewState *state, size_t total_rows) {
         return;
     }
     state->table_view.selection_count = 0;
-    state->table_view.selection_anchor = 0;
-    state->table_view.in_selection_mode = false;
 }
 
 void cleanup_row_selection(ViewState *state) {
@@ -267,41 +265,4 @@ size_t get_selected_rows(const ViewState *state, size_t **rows) {
         }
     }
     return count;
-}
-
-void select_range(ViewState *state, size_t from, size_t to) {
-    for (size_t i = from; i <= to && i < state->table_view.total_rows; i++) {
-        if (!state->table_view.row_selected[i]) {
-            state->table_view.row_selected[i] = true;
-            state->table_view.selection_count++;
-        }
-    }
-}
-
-void begin_selection_mode(ViewState *state, size_t anchor) {
-    if (anchor >= state->table_view.total_rows) return;
-    state->table_view.selection_anchor = anchor;
-    state->table_view.in_selection_mode = true;
-    // Select the anchor point
-    if (!state->table_view.row_selected[anchor]) {
-        toggle_row_selection(state, anchor);
-    }
-}
-
-void update_selection_mode(ViewState *state, size_t current) {
-    if (!state->table_view.in_selection_mode) return;
-    
-    // Clear all selections first
-    clear_all_selections(state);
-    
-    // Select range from anchor to current
-    size_t from = state->table_view.selection_anchor;
-    size_t to = current;
-    if (from > to) {
-        size_t temp = from;
-        from = to;
-        to = temp;
-    }
-    
-    select_range(state, from, to);
 } 

@@ -219,6 +219,4 @@ void init_view_state(ViewState *state) {
     state->table_view.row_selected = NULL;
     state->table_view.selection_count = 0;
     state->table_view.total_rows = 0;
-    state->table_view.selection_anchor = 0;
-    state->table_view.in_selection_mode = false;
 } 
