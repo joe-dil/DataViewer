@@ -1,6 +1,7 @@
 #include "constants.h"
 #include "input_router.h"
-#include "viewer.h"
+#include "app_init.h"
+#include "navigation.h"
 #include <ncurses.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,13 +25,13 @@ static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cu
     }
     
     // Check bounds
-    if (file_line >= viewer->file_data->num_lines) {
+    if (file_line >= viewer->parsed_data->num_lines) {
         return NULL;
     }
     
     // Parse the line to get fields
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], 
-                                  viewer->file_data->fields, viewer->config->max_cols);
+    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[file_line], 
+                                  viewer->parsed_data->fields, viewer->config->max_cols);
     
     // Check if cursor_col is within bounds
     if (cursor_col >= num_fields) {
@@ -39,7 +40,7 @@ static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cu
     
     // Render the field to a static buffer
     static char field_buffer[DEFAULT_MAX_FIELD_LEN];
-    render_field(&viewer->file_data->fields[cursor_col], field_buffer, sizeof(field_buffer));
+    render_field(&viewer->parsed_data->fields[cursor_col], field_buffer, sizeof(field_buffer));
     
     return field_buffer;
 }
@@ -97,77 +98,6 @@ static void copy_to_clipboard_with_status(DSVViewer *viewer, const char *text) {
     viewer->display_state->show_copy_status = 1;
 }
 
-// Helper function to check if a column is fully visible in the current viewport
-static bool is_column_fully_visible(DSVViewer *viewer, size_t start_col, size_t target_col, int screen_width) {
-    if (target_col < start_col) {
-        return false;  // Column is before viewport
-    }
-    
-    int x = 0;
-    for (size_t col = start_col; col <= target_col; col++) {
-        if (col > start_col) {
-            x += SEPARATOR_WIDTH;  // Add separator before this column
-        }
-        
-        int col_width = viewer->display_state->col_widths[col];
-        
-        if (col == target_col) {
-            // Check if the entire column fits
-            return (x + col_width <= screen_width);
-        }
-        
-        x += col_width;
-        if (x >= screen_width) {
-            return false;  // Already past screen edge
-        }
-    }
-    
-    return false;
-}
-
-// Helper function to find the leftmost start column that shows the target column fully
-static size_t find_start_col_for_target(DSVViewer *viewer, size_t target_col, int screen_width) {
-    // First, try showing from column 0
-    if (is_column_fully_visible(viewer, 0, target_col, screen_width)) {
-        return 0;
-    }
-    
-    // Binary search for the optimal start column
-    size_t left = 0;
-    size_t right = target_col;
-    size_t best_start = target_col;  // Worst case: show only the target column
-    
-    while (left <= right && right < viewer->display_state->num_cols) {
-        size_t mid = left + (right - left) / 2;
-        
-        if (is_column_fully_visible(viewer, mid, target_col, screen_width)) {
-            best_start = mid;
-            // Try to show more columns by starting earlier
-            if (mid > 0) {
-                right = mid - 1;
-            } else {
-                break;
-            }
-        } else {
-            // Need to start later
-            left = mid + 1;
-        }
-    }
-    
-    return best_start;
-}
-
-void init_view_state(ViewState *state) {
-    state->current_panel = PANEL_TABLE_VIEW;
-    state->needs_redraw = true;
-    state->table_view.table_start_row = 0;
-    state->table_view.table_start_col = 0;
-    // Note: cursor_row will need to be initialized after we know if headers are shown
-    // For now, default to 0, but the main program should adjust this
-    state->table_view.cursor_row = 0;
-    state->table_view.cursor_col = 0;
-}
-
 GlobalResult handle_global_input(int ch, ViewState *state) {
     (void)state; // Suppress unused parameter warning for now
     
@@ -192,126 +122,31 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
     size_t old_cursor_row = state->table_view.cursor_row;
     size_t old_cursor_col = state->table_view.cursor_col;
     
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-    int visible_rows = rows - 1; // Minus status line
-    
-    // If headers are shown, we lose one more row for display
-    if (viewer->display_state->show_header) {
-        visible_rows--;
-    }
-    
-    // Calculate the actual number of data rows (excluding header if present)
-    size_t data_rows = viewer->file_data->num_lines;
-    if (viewer->display_state->show_header && viewer->file_data->num_lines > 0) {
-        data_rows--; // Subtract header row from total lines
-    }
-
     switch (ch) {
         case KEY_UP:
-            if (state->table_view.cursor_row > 0) {
-                state->table_view.cursor_row--;
-                // Scroll up if cursor moves above viewport
-                if (state->table_view.cursor_row < state->table_view.table_start_row) {
-                    state->table_view.table_start_row = state->table_view.cursor_row;
-                }
-            }
+            navigate_up(state);
             break;
-            
         case KEY_DOWN:
-            // Use data_rows for boundary check
-            if (state->table_view.cursor_row + 1 < data_rows) {
-                state->table_view.cursor_row++;
-                // Scroll down if cursor moves below viewport
-                if (state->table_view.cursor_row >= state->table_view.table_start_row + visible_rows) {
-                    state->table_view.table_start_row = state->table_view.cursor_row - visible_rows + 1;
-                }
-            }
+            navigate_down(state, viewer);
             break;
-            
         case KEY_LEFT:
-            if (state->table_view.cursor_col > 0) {
-                state->table_view.cursor_col--;
-                // Scroll left if cursor moves before viewport
-                if (state->table_view.cursor_col < state->table_view.table_start_col) {
-                    state->table_view.table_start_col = state->table_view.cursor_col;
-                }
-            }
+            navigate_left(state);
             break;
-            
         case KEY_RIGHT:
-            if (state->table_view.cursor_col + 1 < viewer->display_state->num_cols) {
-                // Move cursor right
-                state->table_view.cursor_col++;
-                
-                // Check if cursor column is still fully visible
-                if (!is_column_fully_visible(viewer, state->table_view.table_start_col, 
-                                            state->table_view.cursor_col, cols)) {
-                    // Find optimal start column to show cursor
-                    state->table_view.table_start_col = find_start_col_for_target(
-                        viewer, state->table_view.cursor_col, cols);
-                }
-            }
+            navigate_right(state, viewer);
             break;
-            
         case KEY_PPAGE:
-            // Move viewport up by one page
-            if (state->table_view.table_start_row > (size_t)visible_rows) {
-                state->table_view.table_start_row -= visible_rows;
-            } else {
-                state->table_view.table_start_row = 0;
-            }
-            // Move cursor to stay visible
-            if (state->table_view.cursor_row >= state->table_view.table_start_row + visible_rows) {
-                state->table_view.cursor_row = state->table_view.table_start_row + visible_rows - 1;
-            }
+            navigate_page_up(state, viewer);
             break;
-            
         case KEY_NPAGE:
-            // Move viewport down by one page
-            state->table_view.table_start_row += visible_rows;
-            // Use data_rows for boundary check
-            if (state->table_view.table_start_row >= data_rows) {
-                state->table_view.table_start_row = (data_rows > (size_t)visible_rows) 
-                    ? data_rows - visible_rows : 0;
-            }
-            // Move cursor to stay visible
-            if (state->table_view.cursor_row < state->table_view.table_start_row) {
-                state->table_view.cursor_row = state->table_view.table_start_row;
-            }
-            // Ensure cursor doesn't go past the last data row
-            if (state->table_view.cursor_row >= data_rows && data_rows > 0) {
-                state->table_view.cursor_row = data_rows - 1;
-            }
+            navigate_page_down(state, viewer);
             break;
-            
         case KEY_HOME:
-            state->table_view.cursor_row = 0;
-            state->table_view.cursor_col = 0;
-            state->table_view.table_start_row = 0;
-            state->table_view.table_start_col = 0;
+            navigate_home(state);
             break;
-            
         case KEY_END:
-            // Use data_rows for setting cursor to last row
-            state->table_view.cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
-            state->table_view.cursor_col = (viewer->display_state->num_cols > 0)
-                ? viewer->display_state->num_cols - 1 : 0;
-            
-            // Scroll viewport to show the cursor at the end
-            if (data_rows > (size_t)visible_rows) {
-                state->table_view.table_start_row = data_rows - visible_rows;
-            } else {
-                state->table_view.table_start_row = 0;
-            }
-            
-            // Find optimal horizontal position to show last column
-            if (viewer->display_state->num_cols > 0) {
-                state->table_view.table_start_col = find_start_col_for_target(
-                    viewer, state->table_view.cursor_col, cols);
-            }
+            navigate_end(state, viewer);
             break;
-            
         case 'y':  // Copy current cell to clipboard
             {
                 // Get the field value at cursor position

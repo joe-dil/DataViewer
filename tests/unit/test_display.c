@@ -1,5 +1,8 @@
-#include "framework/test_runner.h"
-#include "viewer.h"
+#include "../framework/test_runner.h"
+#include "app_init.h"
+#include "display_state.h"
+#include "file_data.h"
+#include "parsed_data.h"
 #include "config.h"
 #include "buffer_pool.h"
 #include <string.h>
@@ -9,7 +12,8 @@
 // A mock DSVViewer struct for testing display functions
 static DSVViewer mock_viewer;
 static DisplayState mock_display_state;
-static FileAndParseData mock_file_data;
+static FileData mock_file_data;
+static ParsedData mock_parsed_data;
 static DSVConfig mock_config;  // Make config static so it persists
 
 // Helper to reset mocks before each test
@@ -17,11 +21,13 @@ void setup_display_mocks() {
     // Reset all mock structures to zero
     memset(&mock_viewer, 0, sizeof(DSVViewer));
     memset(&mock_display_state, 0, sizeof(DisplayState));
-    memset(&mock_file_data, 0, sizeof(FileAndParseData));
+    memset(&mock_file_data, 0, sizeof(FileData));
+    memset(&mock_parsed_data, 0, sizeof(ParsedData));
 
     // Link the mock components together
     mock_viewer.display_state = &mock_display_state;
     mock_viewer.file_data = &mock_file_data;
+    mock_viewer.parsed_data = &mock_parsed_data;
 
     // Initialize the buffer pool for tests
     config_init_defaults(&mock_config);  // Use static config

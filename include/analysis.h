@@ -5,6 +5,9 @@
 #include "field_desc.h"
 #include "error_context.h"
 #include "config.h"
+#include "file_data.h"
+#include "parsed_data.h"
+#include "display_state.h"
 
 // Forward declarations
 struct DSVViewer;
@@ -27,10 +30,12 @@ void cleanup_column_analysis(ColumnAnalysis *analysis);
  * @brief Analyze CSV data to determine optimal column display widths.
  * Samples file content to calculate column widths, respecting min/max limits.
  * Results are stored in viewer->display_state for rendering.
- * @param viewer Viewer instance with loaded file data
+ * @param file_data File data structure
+ * @param parsed_data Parsed data structure
+ * @param display_state Display state structure
  * @param config Configuration with column width limits and sample size
  * @return DSV_OK on success, DSV_ERROR_MEMORY on allocation failure
  */
-DSVResult analyze_column_widths(struct DSVViewer *viewer, const DSVConfig *config);
+DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *parsed_data, DisplayState *display_state, const DSVConfig *config);
 
 #endif // ANALYSIS_H 

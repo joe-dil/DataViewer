@@ -1,4 +1,4 @@
-#include "viewer.h"
+#include "app_init.h"
 #include "config.h"
 #include <string.h>
 #include <locale.h>

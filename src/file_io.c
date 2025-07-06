@@ -1,7 +1,9 @@
-#include "viewer.h"
+#include "app_init.h"
 #include "file_io.h"
+#include "file_data.h"
+#include "parsed_data.h"
 #include "display_state.h"
-#include "file_and_parse_data.h"
+#include "config.h"
 #include "logging.h"
 #include "error_context.h"
 #include "utils.h"
@@ -24,15 +26,15 @@ static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config);
 
 static DSVResult validate_file_bounds(struct DSVViewer *viewer) {
     CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
-    CHECK_NULL_RET(viewer->file_data, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(viewer->parsed_data, DSV_ERROR_INVALID_ARGS);
     
     // CRITICAL: Prevent SIZE_MAX assignment when num_lines == 0
-    if (viewer->file_data->num_lines == 0) {
+    if (viewer->parsed_data->num_lines == 0) {
         // Create minimal valid state instead of underflow
-        viewer->file_data->num_lines = 1;
-        viewer->file_data->line_offsets = malloc(sizeof(size_t));
-        CHECK_ALLOC(viewer->file_data->line_offsets);
-        viewer->file_data->line_offsets[0] = 0;
+        viewer->parsed_data->num_lines = 1;
+        viewer->parsed_data->line_offsets = malloc(sizeof(size_t));
+        CHECK_ALLOC(viewer->parsed_data->line_offsets);
+        viewer->parsed_data->line_offsets[0] = 0;
         return DSV_OK; // Signal empty file handled
     }
     return DSV_OK; // Normal file
@@ -44,11 +46,11 @@ static DSVResult handle_empty_file(struct DSVViewer *viewer) {
     
     if (viewer->file_data->length == 0) {
         // Set up minimal valid state for empty files
-        viewer->file_data->num_lines = 1;
-        viewer->file_data->line_offsets = malloc(sizeof(size_t));
-        CHECK_ALLOC(viewer->file_data->line_offsets);
-        viewer->file_data->line_offsets[0] = 0;
-        viewer->file_data->delimiter = ','; // Default delimiter
+        viewer->parsed_data->num_lines = 1;
+        viewer->parsed_data->line_offsets = malloc(sizeof(size_t));
+        CHECK_ALLOC(viewer->parsed_data->line_offsets);
+        viewer->parsed_data->line_offsets[0] = 0;
+        viewer->parsed_data->delimiter = ','; // Default delimiter
         return DSV_OK;
     }
     return DSV_ERROR; // Not empty - caller should continue processing
@@ -57,10 +59,10 @@ static DSVResult handle_empty_file(struct DSVViewer *viewer) {
 // Handle single line files - basic implementation
 static DSVResult handle_single_line_file(struct DSVViewer *viewer) {
     CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
-    CHECK_NULL_RET(viewer->file_data, DSV_ERROR_INVALID_ARGS);
+    CHECK_NULL_RET(viewer->parsed_data, DSV_ERROR_INVALID_ARGS);
     
     // Single-line files are handled by the normal scanning process
-    if (viewer->file_data->num_lines == 1) {
+    if (viewer->parsed_data->num_lines == 1) {
         // Single line files work correctly with existing logic
     }
     return DSV_OK;
@@ -93,9 +95,9 @@ static size_t estimate_line_count(DSVViewer *viewer, const DSVConfig *config) {
 
 // --- Public API Functions ---
 
-char detect_file_delimiter(const char *data, size_t length, char override_delimiter, const DSVConfig *config) {
-    if (override_delimiter != 0) {
-        return override_delimiter;
+char detect_file_delimiter(const char *data, size_t length, char specified_delimiter, const DSVConfig *config) {
+    if (specified_delimiter) {
+        return specified_delimiter;
     }
     if (!data || !config) return ','; // Safe fallback
     
@@ -174,12 +176,12 @@ DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
     if (empty_result == DSV_OK) return DSV_OK;
     if (empty_result != DSV_ERROR) return empty_result; // DSV_ERROR means "continue processing"
 
-    viewer->file_data->capacity = estimate_line_count(viewer, config);
-    viewer->file_data->line_offsets = malloc(viewer->file_data->capacity * sizeof(size_t));
-    CHECK_ALLOC(viewer->file_data->line_offsets);
+    viewer->parsed_data->capacity = estimate_line_count(viewer, config);
+    viewer->parsed_data->line_offsets = malloc(viewer->parsed_data->capacity * sizeof(size_t));
+    CHECK_ALLOC(viewer->parsed_data->line_offsets);
 
-    viewer->file_data->num_lines = 0;
-    viewer->file_data->line_offsets[viewer->file_data->num_lines++] = 0;
+    viewer->parsed_data->num_lines = 0;
+    viewer->parsed_data->line_offsets[viewer->parsed_data->num_lines++] = 0;
 
     const char *search_start = viewer->file_data->data;
     const char *file_end = viewer->file_data->data + viewer->file_data->length;
@@ -188,20 +190,20 @@ DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
         const char *newline = memchr(search_start, '\n', file_end - search_start);
         if (!newline) break;
 
-        if (viewer->file_data->num_lines >= viewer->file_data->capacity) {
-            size_t new_capacity = viewer->file_data->capacity * 2;
-            size_t *new_offsets = realloc(viewer->file_data->line_offsets, new_capacity * sizeof(size_t));
+        if (viewer->parsed_data->num_lines >= viewer->parsed_data->capacity) {
+            size_t new_capacity = viewer->parsed_data->capacity * 2;
+            size_t *new_offsets = realloc(viewer->parsed_data->line_offsets, new_capacity * sizeof(size_t));
             if (!new_offsets) {
                 LOG_ERROR("Failed to expand line offsets array");
                 return DSV_ERROR_MEMORY;
             }
-            viewer->file_data->line_offsets = new_offsets;
-            viewer->file_data->capacity = new_capacity;
+            viewer->parsed_data->line_offsets = new_offsets;
+            viewer->parsed_data->capacity = new_capacity;
         }
 
         size_t next_line_offset = (newline - viewer->file_data->data) + 1;
         if (next_line_offset < viewer->file_data->length) {
-            viewer->file_data->line_offsets[viewer->file_data->num_lines++] = next_line_offset;
+            viewer->parsed_data->line_offsets[viewer->parsed_data->num_lines++] = next_line_offset;
         }
         search_start = newline + 1;
     }

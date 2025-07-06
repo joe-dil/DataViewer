@@ -1,5 +1,5 @@
 #include "constants.h"
-#include "viewer.h"
+#include "app_init.h"
 #include "display_state.h"
 #include "cache.h"
 #include "utils.h"
@@ -17,7 +17,7 @@ static int get_column_width(DSVViewer *viewer, size_t col) {
 // Simple helper: render field content (common to both header and data)
 static const char* render_column_content(DSVViewer *viewer, size_t col, int display_width) {
     char *rendered_field = viewer->display_state->buffers.render_buffer;
-    render_field(&viewer->file_data->fields[col], rendered_field, viewer->config->max_field_len);
+    render_field(&viewer->parsed_data->fields[col], rendered_field, viewer->config->max_field_len);
     return get_truncated_string(viewer, rendered_field, display_width);
 }
 
@@ -38,7 +38,7 @@ static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int col
     layout->last_visible_col = start_col;
     layout->has_more_columns_right = false;
     
-    layout->num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], viewer->file_data->fields, viewer->config->max_cols);
+    layout->num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[0], viewer->parsed_data->fields, viewer->config->max_cols);
     bool broke_early = false;
     
     // Try to fit as many columns as possible within screen width
@@ -173,8 +173,7 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
     }
     
     // Parse the header to get the actual number of fields
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], 
-                                  viewer->file_data->fields, viewer->config->max_cols);
+    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[0], viewer->parsed_data->fields, viewer->config->max_cols);
     
     int x = 0;
     for (size_t col = start_col; col <= target_col && col < num_fields; col++) {
@@ -234,7 +233,7 @@ static int draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t star
     (void)rows; // Suppress unused warning
     
     int x = 0;
-    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], viewer->file_data->fields, config->max_cols);
+    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[file_line], viewer->parsed_data->fields, config->max_cols);
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
@@ -294,7 +293,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
             file_line++;  // Skip header line in file
         }
         
-        if (file_line >= viewer->file_data->num_lines) {
+        if (file_line >= viewer->parsed_data->num_lines) {
             // Clear remaining lines if no more data
             continue;
         }
@@ -348,15 +347,15 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
             first_visible++;  // Account for header being row 1
             last_visible++;   // Account for header being row 1
         }
-        if (last_visible > viewer->file_data->num_lines) {
-            last_visible = viewer->file_data->num_lines;
+        if (last_visible > viewer->parsed_data->num_lines) {
+            last_visible = viewer->parsed_data->num_lines;
         }
         
         mvprintw(rows - 1, 0, "Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu lines | q: quit | h: help",
                  display_cursor_row, cursor_col + 1,
                  first_visible,
                  last_visible,
-                 viewer->file_data->num_lines);
+                 viewer->parsed_data->num_lines);
     }
     
     refresh();

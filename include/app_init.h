@@ -1,17 +1,20 @@
-#ifndef VIEWER_H
-#define VIEWER_H
+#ifndef APP_INIT_H
+#define APP_INIT_H
 
 #include <stddef.h>
-#include "error_context.h"
 #include "field_desc.h"
 #include "display_state.h"
-#include "file_and_parse_data.h"
+#include "file_data.h"
+#include "parsed_data.h"
 #include "config.h"
+#include "buffer_pool.h"
 
 // Forward declarations for cache components
 struct DisplayCache;
 struct CacheAllocator;
 struct StringInternTable;
+struct Cache;
+struct ErrorContext;
 
 // Core data structure
 typedef struct DSVViewer {
@@ -22,8 +25,12 @@ typedef struct DSVViewer {
     
     // Component pointers (full definitions available)
     DisplayState *display_state;
-    FileAndParseData *file_data;
+    FileData *file_data;
+    ParsedData *parsed_data;
     const DSVConfig *config;
+    struct Cache *cache;
+    struct ErrorContext *error_context;
+    BufferPool *buffer_pool;
 } DSVViewer;
 
 // Core application function declarations
@@ -48,13 +55,15 @@ void cleanup_viewer(DSVViewer *viewer);
 
 /**
  * @brief Parse a single line into field descriptors.
- * @param viewer Viewer instance containing file data
+ * @param data CSV data
+ * @param length Length of CSV data
+ * @param delimiter Character delimiter
  * @param offset Byte offset in file where line starts
  * @param fields Array to store parsed field descriptors
  * @param max_fields Maximum number of fields to parse
  * @return Number of fields actually parsed
  */
-size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields);
+size_t parse_line(const char *data, size_t length, char delimiter, size_t offset, FieldDesc *fields, size_t max_fields);
 
 /**
  * @brief Render field content into a string buffer.
@@ -89,4 +98,4 @@ void show_help(void);
  */
 void run_viewer(DSVViewer *viewer);
 
-#endif // VIEWER_H 
+#endif // APP_INIT_H 

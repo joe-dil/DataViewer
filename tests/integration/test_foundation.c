@@ -1,5 +1,5 @@
 #include "../framework/test_runner.h"
-#include "viewer.h"
+#include "app_init.h"
 #include "config.h"
 #include "logging.h"
 #include "error_context.h"
@@ -139,7 +139,7 @@ void test_viewer_init_with_empty_file() {
     DSVResult result = init_viewer(&viewer, "empty.csv", 0, &config);
     
     ASSERT_EQ(result, DSV_OK); // Empty files should be handled gracefully
-    ASSERT_EQ(viewer.file_data->num_lines, 1); // Should have at least one line
+    ASSERT_EQ(viewer.parsed_data->num_lines, 1); // Should have at least one line
     
     cleanup_viewer(&viewer);
     unlink("empty.csv");
@@ -189,7 +189,7 @@ void test_memory_multiple_init_cleanup_cycles() {
         
         // Verify basic functionality
         ASSERT_NOT_NULL(viewer.file_data);
-        ASSERT_GT(viewer.file_data->num_lines, 0);
+        ASSERT_GT(viewer.parsed_data->num_lines, 0);
         ASSERT_NOT_NULL(viewer.display_state);
         
         cleanup_viewer(&viewer);
@@ -219,13 +219,13 @@ void test_memory_large_field_handling() {
     ASSERT_EQ(result, DSV_OK);
     
     // Parse the first line to test large field handling
-    size_t num_fields = parse_line(&viewer, viewer.file_data->line_offsets[0], 
-                                  viewer.file_data->fields, config.max_cols);
+    size_t num_fields = parse_line(viewer.file_data->data, viewer.file_data->length, viewer.parsed_data->delimiter, viewer.parsed_data->line_offsets[0], 
+                                  viewer.parsed_data->fields, config.max_cols);
     ASSERT_EQ(num_fields, 3);
     
     // Test field rendering with large field
     char render_buffer[2048];
-    render_field(&viewer.file_data->fields[1], render_buffer, sizeof(render_buffer));
+    render_field(&viewer.parsed_data->fields[1], render_buffer, sizeof(render_buffer));
     ASSERT_GT(strlen(render_buffer), 500); // Should contain most of the large field
     
     cleanup_viewer(&viewer);
@@ -264,7 +264,7 @@ void test_performance_file_loading() {
     double duration = end_time - start_time;
     
     ASSERT_EQ(result, DSV_OK);
-    ASSERT_EQ(viewer.file_data->num_lines, num_rows + 1); // +1 for header
+    ASSERT_EQ(viewer.parsed_data->num_lines, num_rows + 1); // +1 for header
     
     printf("✓ Performance: Loaded %d rows in %.2f ms (%.1f rows/ms)\n", 
            num_rows, duration, num_rows / duration);
@@ -298,16 +298,16 @@ void test_performance_parsing_benchmark() {
     double start_time = get_time_ms();
     
     for (int i = 0; i < parse_iterations; i++) {
-        for (size_t line = 0; line < viewer.file_data->num_lines; line++) {
-            size_t num_fields = parse_line(&viewer, viewer.file_data->line_offsets[line],
-                                          viewer.file_data->fields, config.max_cols);
+        for (size_t line = 0; line < viewer.parsed_data->num_lines; line++) {
+            size_t num_fields = parse_line(viewer.file_data->data, viewer.file_data->length, viewer.parsed_data->delimiter, viewer.parsed_data->line_offsets[line],
+                                          viewer.parsed_data->fields, config.max_cols);
             ASSERT_GT(num_fields, 0);
         }
     }
     
     double end_time = get_time_ms();
     double duration = end_time - start_time;
-    double parses_per_ms = (parse_iterations * viewer.file_data->num_lines) / duration;
+    double parses_per_ms = (parse_iterations * viewer.parsed_data->num_lines) / duration;
     
     printf("✓ Performance: %.1f line parses/ms over %d iterations\n", 
            parses_per_ms, parse_iterations);

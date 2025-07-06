@@ -1,5 +1,5 @@
 #include "constants.h"
-#include "viewer.h"
+#include "app_init.h"
 #include "cache.h"
 #include "logging.h"
 #include "error_context.h"

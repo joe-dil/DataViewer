@@ -1,4 +1,4 @@
-#include "viewer.h"
+#include "app_init.h"
 #include "display_state.h"
 #include <wchar.h>
 #include <string.h>
@@ -8,29 +8,24 @@
 
 // CSV parsing state machine for handling quotes and delimiters
 typedef struct {
-    int in_quotes;         // Currently inside a quoted field
-    int needs_unescaping;  // Field contains escaped quotes ("")
+    int in_quotes;         // True if currently inside a double-quoted field
+    int needs_unescaping;  // True if the field contains escaped quotes ("")
     size_t field_start;    // Byte offset where current field starts
     size_t field_count;    // Number of fields parsed so far
 } ParseState;
 
 // Helper to record a new field, avoiding duplicate code.
-static void record_field(DSVViewer *viewer, FieldDesc *fields, size_t *field_count, int max_fields, size_t field_start, size_t current_pos, int needs_unescaping) {
-    if (*field_count < (size_t)max_fields) {
-        fields[*field_count] = (FieldDesc){viewer->file_data->data + field_start, current_pos - field_start, needs_unescaping};
+static void record_field(const char *data, FieldDesc *fields, size_t *field_count, size_t max_fields, size_t field_start, size_t current_pos, int needs_unescaping) {
+    if (*field_count < max_fields) {
+        fields[*field_count] = (FieldDesc){data + field_start, current_pos - field_start, needs_unescaping};
         (*field_count)++;
     }
 }
 
-size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_fields) {
-    if (!viewer || !viewer->file_data || !viewer->file_data->data || offset >= viewer->file_data->length) {
+size_t parse_line(const char *data, size_t length, char delimiter, size_t offset, FieldDesc *fields, size_t max_fields) {
+    if (!data || offset >= length) {
         return 0;
     }
-
-    // Cache frequently accessed variables to reduce pointer dereferencing overhead
-    const char *data = viewer->file_data->data;
-    const size_t length = viewer->file_data->length;
-    const char delimiter = viewer->file_data->delimiter;
 
     // Initialize parsing state machine
     ParseState state = {
@@ -61,7 +56,7 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
                 state.in_quotes = 1; // Start of a quoted field
             } else if (c == delimiter) {
                 // End of field - record it and start next
-                record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
+                record_field(data, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
                 state.field_start = i + 1;
                 state.needs_unescaping = 0; // Reset for next field
             } else if (c == '\n') {
@@ -72,9 +67,8 @@ size_t parse_line(DSVViewer *viewer, size_t offset, FieldDesc *fields, int max_f
     }
     
     // Record the final field (lines may not end with delimiter)
-    record_field(viewer, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
+    record_field(data, fields, &state.field_count, max_fields, state.field_start, i, state.needs_unescaping);
 
-    viewer->file_data->num_fields = state.field_count;
     return state.field_count;
 }
 

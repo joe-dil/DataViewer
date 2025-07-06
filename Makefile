@@ -11,10 +11,11 @@ DEPDIR = deps
 TARGET = $(BINDIR)/dv
 
 # Source files
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/viewer.c $(SRCDIR)/display.c $(SRCDIR)/navigation.c \
-          $(SRCDIR)/parser.c $(SRCDIR)/file_io.c $(SRCDIR)/analysis.c $(SRCDIR)/config.c \
-          $(SRCDIR)/logging.c $(SRCDIR)/utils.c $(SRCDIR)/cache.c $(SRCDIR)/buffer_pool.c \
-          $(SRCDIR)/error_context.c $(SRCDIR)/input_router.c $(SRCDIR)/encoding.c
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/app_init.c $(SRCDIR)/display.c $(SRCDIR)/app_loop.c \
+          $(SRCDIR)/navigation.c $(SRCDIR)/parser.c $(SRCDIR)/file_io.c $(SRCDIR)/analysis.c \
+          $(SRCDIR)/config.c $(SRCDIR)/logging.c $(SRCDIR)/utils.c $(SRCDIR)/cache.c \
+          $(SRCDIR)/buffer_pool.c $(SRCDIR)/error_context.c $(SRCDIR)/input_router.c \
+          $(SRCDIR)/encoding.c
 
 # All .c files in the src directory, excluding main.c
 LIB_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
