@@ -2,6 +2,67 @@
 #include "input_router.h"
 #include "viewer.h"
 #include <ncurses.h>
+#include <stdbool.h>
+
+// Helper function to check if a column is fully visible in the current viewport
+static bool is_column_fully_visible(DSVViewer *viewer, size_t start_col, size_t target_col, int screen_width) {
+    if (target_col < start_col) {
+        return false;  // Column is before viewport
+    }
+    
+    int x = 0;
+    for (size_t col = start_col; col <= target_col; col++) {
+        if (col > start_col) {
+            x += SEPARATOR_WIDTH;  // Add separator before this column
+        }
+        
+        int col_width = viewer->display_state->col_widths[col];
+        
+        if (col == target_col) {
+            // Check if the entire column fits
+            return (x + col_width <= screen_width);
+        }
+        
+        x += col_width;
+        if (x >= screen_width) {
+            return false;  // Already past screen edge
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to find the leftmost start column that shows the target column fully
+static size_t find_start_col_for_target(DSVViewer *viewer, size_t target_col, int screen_width) {
+    // First, try showing from column 0
+    if (is_column_fully_visible(viewer, 0, target_col, screen_width)) {
+        return 0;
+    }
+    
+    // Binary search for the optimal start column
+    size_t left = 0;
+    size_t right = target_col;
+    size_t best_start = target_col;  // Worst case: show only the target column
+    
+    while (left <= right && right < viewer->display_state->num_cols) {
+        size_t mid = left + (right - left) / 2;
+        
+        if (is_column_fully_visible(viewer, mid, target_col, screen_width)) {
+            best_start = mid;
+            // Try to show more columns by starting earlier
+            if (mid > 0) {
+                right = mid - 1;
+            } else {
+                break;
+            }
+        } else {
+            // Need to start later
+            left = mid + 1;
+        }
+    }
+    
+    return best_start;
+}
 
 void init_view_state(ViewState *state) {
     state->current_panel = PANEL_TABLE_VIEW;
@@ -80,67 +141,15 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             
         case KEY_RIGHT:
             if (state->table_view.cursor_col + 1 < viewer->display_state->num_cols) {
-                // First check if the last column is already fully visible
-                int x = 0;
-                bool last_column_visible = false;
+                // Move cursor right
+                state->table_view.cursor_col++;
                 
-                for (size_t col = state->table_view.table_start_col; col < viewer->display_state->num_cols; col++) {
-                    int col_width = viewer->display_state->col_widths[col];
-                    
-                    // Check if this is the last column
-                    if (col == viewer->display_state->num_cols - 1) {
-                        if (x + col_width + SEPARATOR_WIDTH <= cols) {
-                            last_column_visible = true;
-                        }
-                        break;
-                    }
-                    
-                    x += col_width + SEPARATOR_WIDTH;
-                    if (x >= cols) break;
-                }
-                
-                // If last column is visible, only allow cursor movement within visible columns
-                if (last_column_visible) {
-                    // Count how many columns are actually visible
-                    size_t last_visible_col = state->table_view.table_start_col;
-                    x = 0;
-                    for (size_t col = state->table_view.table_start_col; col < viewer->display_state->num_cols; col++) {
-                        int col_width = viewer->display_state->col_widths[col];
-                        if (x + col_width + SEPARATOR_WIDTH <= cols) {
-                            last_visible_col = col;
-                            x += col_width + SEPARATOR_WIDTH;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    // Only move if cursor would stay in visible area
-                    if (state->table_view.cursor_col < last_visible_col) {
-                        state->table_view.cursor_col++;
-                    }
-                } else {
-                    // Last column not visible, allow normal movement with scrolling
-                    state->table_view.cursor_col++;
-                    if (state->table_view.cursor_col >= state->table_view.table_start_col + 5) {
-                        // Before scrolling, check if it would make sense
-                        size_t new_start = state->table_view.table_start_col + 1;
-                        
-                        // Check if scrolling would still show content
-                        x = 0;
-                        bool would_show_content = false;
-                        for (size_t col = new_start; col < viewer->display_state->num_cols; col++) {
-                            int col_width = viewer->display_state->col_widths[col];
-                            if (x + col_width <= cols) {
-                                would_show_content = true;
-                                break;
-                            }
-                            x += col_width + SEPARATOR_WIDTH;
-                        }
-                        
-                        if (would_show_content) {
-                            state->table_view.table_start_col++;
-                        }
-                    }
+                // Check if cursor column is still fully visible
+                if (!is_column_fully_visible(viewer, state->table_view.table_start_col, 
+                                            state->table_view.cursor_col, cols)) {
+                    // Find optimal start column to show cursor
+                    state->table_view.table_start_col = find_start_col_for_target(
+                        viewer, state->table_view.cursor_col, cols);
                 }
             }
             break;
@@ -183,11 +192,18 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 ? viewer->file_data->num_lines - 1 : 0;
             state->table_view.cursor_col = (viewer->display_state->num_cols > 0)
                 ? viewer->display_state->num_cols - 1 : 0;
+            
             // Scroll viewport to show the cursor at the end
             if (viewer->file_data->num_lines > (size_t)visible_rows) {
                 state->table_view.table_start_row = viewer->file_data->num_lines - visible_rows;
             } else {
                 state->table_view.table_start_row = 0;
+            }
+            
+            // Find optimal horizontal position to show last column
+            if (viewer->display_state->num_cols > 0) {
+                state->table_view.table_start_col = find_start_col_for_target(
+                    viewer, state->table_view.cursor_col, cols);
             }
             break;
             
