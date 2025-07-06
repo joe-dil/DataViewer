@@ -8,6 +8,7 @@ obj/
 # Executable
 bin/viewer
 bin/test_runner
+bin/dv
 
 # Temporary files
 *.tmp
