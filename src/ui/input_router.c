@@ -2,6 +2,7 @@
 #include "input_router.h"
 #include "app_init.h"
 #include "navigation.h"
+#include "analysis.h"
 #include <ncurses.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -147,6 +148,22 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case KEY_END:
             navigate_end(state, viewer);
             break;
+        case 'F': // Shift+F. ncurses doesn't have a constant for this.
+            {
+                FreqAnalysisResult* result = perform_frequency_analysis(viewer, viewer->view_manager->current, state->table_view.cursor_col);
+                if (result) {
+                    // Cleanup old results if any
+                    if (state->freq_analysis_view.result) {
+                        free_frequency_analysis_result(state->freq_analysis_view.result);
+                    }
+                    state->freq_analysis_view.result = result;
+                    state->freq_analysis_view.scroll_top = 0;
+                    state->current_panel = PANEL_FREQ_ANALYSIS;
+                    state->needs_redraw = true;
+                }
+                // Potentially add an error message to status bar if result is NULL
+                return INPUT_CONSUMED;
+            }
         case ' ':
             toggle_row_selection(state, state->table_view.cursor_row);
             state->needs_redraw = true;
@@ -223,6 +240,67 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
     return INPUT_CONSUMED;
 }
 
+// --- Input Handlers per Panel ---
+
+static InputResult handle_freq_analysis_input(int ch, ViewState *state) {
+    if (!state || !state->freq_analysis_view.result) {
+        return INPUT_IGNORED;
+    }
+
+    size_t old_scroll = state->freq_analysis_view.scroll_top;
+    size_t max_scroll = state->freq_analysis_view.result->count > 0 ? state->freq_analysis_view.result->count - 1 : 0;
+
+    switch (ch) {
+        case KEY_UP:
+            if (state->freq_analysis_view.scroll_top > 0) {
+                state->freq_analysis_view.scroll_top--;
+            }
+            break;
+        case KEY_DOWN:
+            if (state->freq_analysis_view.scroll_top < max_scroll) {
+                state->freq_analysis_view.scroll_top++;
+            }
+            break;
+        case KEY_PPAGE:
+            {
+                int rows, cols;
+                getmaxyx(stdscr, rows, cols); (void)cols;
+                int page_size = rows - 5; // minus header/footer
+                if (page_size < 1) page_size = 1;
+                state->freq_analysis_view.scroll_top = state->freq_analysis_view.scroll_top > (size_t)page_size ? state->freq_analysis_view.scroll_top - page_size : 0;
+            }
+            break;
+        case KEY_NPAGE:
+            {
+                int rows, cols;
+                getmaxyx(stdscr, rows, cols); (void)cols;
+                int page_size = rows - 5; // minus header/footer
+                if (page_size < 1) page_size = 1;
+                state->freq_analysis_view.scroll_top += page_size;
+                if (state->freq_analysis_view.scroll_top > max_scroll) {
+                    state->freq_analysis_view.scroll_top = max_scroll;
+                }
+            }
+            break;
+        case 'q':
+        case 27: // ESC
+            // Free results and switch back to table view
+            free_frequency_analysis_result(state->freq_analysis_view.result);
+            state->freq_analysis_view.result = NULL;
+            state->current_panel = PANEL_TABLE_VIEW;
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+        default:
+            return INPUT_IGNORED;
+    }
+
+    if (state->freq_analysis_view.scroll_top != old_scroll) {
+        state->needs_redraw = true;
+    }
+
+    return INPUT_CONSUMED;
+}
+
 InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
     // First, check for global commands
     GlobalResult global_result = handle_global_input(ch, state);
@@ -235,6 +313,9 @@ InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
         case PANEL_TABLE_VIEW:
             return handle_table_input(ch, viewer, state);
             
+        case PANEL_FREQ_ANALYSIS:
+            return handle_freq_analysis_input(ch, state);
+
         case PANEL_HELP:
             // Help panel would handle its own input here
             // For now, just return ignored

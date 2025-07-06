@@ -7,10 +7,12 @@
 #include "app_init.h"
 #include "constants.h"
 #include "utils.h"
+#include "cache.h"
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 #include <sys/stat.h>
+#include <stdint.h>
 
 // --- Public API Functions ---
 
@@ -88,4 +90,203 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
 
     SAFE_FREE(col_widths_tmp);
     return DSV_OK;
+} 
+
+// --- Frequency Analysis ---
+
+#define INITIAL_FREQ_TABLE_SIZE 1024
+
+// An entry in the frequency analysis hash table (internal to this C file)
+typedef struct FreqAnalysisEntry {
+    const char* value;
+    int count;
+    struct FreqAnalysisEntry* next;
+} FreqAnalysisEntry;
+
+// The hash table for frequency analysis (internal to this C file)
+typedef struct {
+    FreqAnalysisEntry** buckets;
+    int size;
+    int item_count;
+    struct DSVViewer *viewer; // For memory pooling
+} FreqAnalysisHashTable;
+
+
+// Forward declaration for the comparison function
+static int compare_freq_counts(const void *a, const void *b);
+
+// Get the column name, either from the header or by generating one.
+static const char* get_column_name(struct DSVViewer *viewer, int column_index, char* buffer, size_t buffer_size) {
+    if (viewer && viewer->parsed_data && viewer->parsed_data->has_header && column_index < (int)viewer->parsed_data->num_header_fields) {
+        render_field(&viewer->parsed_data->header_fields[column_index], buffer, buffer_size);
+        return buffer;
+    } else {
+        snprintf(buffer, buffer_size, "Column %d", column_index + 1);
+        return buffer;
+    }
+}
+
+// Create and initialize a new hash table for frequency analysis
+static FreqAnalysisHashTable* hash_table_create(struct DSVViewer *viewer, int size) {
+    if (size <= 0) size = INITIAL_FREQ_TABLE_SIZE;
+
+    FreqAnalysisHashTable* table = calloc(1, sizeof(FreqAnalysisHashTable));
+    if (!table) return NULL;
+
+    table->buckets = calloc(size, sizeof(FreqAnalysisEntry*));
+    if (!table->buckets) {
+        free(table);
+        return NULL;
+    }
+    
+    table->size = size;
+    table->item_count = 0;
+    table->viewer = viewer; // Store viewer for string interning
+    return table;
+}
+
+// Free all memory associated with the hash table
+static void hash_table_destroy(FreqAnalysisHashTable *table) {
+    if (!table) return;
+
+    // The string values are interned and managed by the cache system,
+    // and the entries themselves will be freed with the results array.
+    // We only need to free the bucket array and the table structure.
+    free(table->buckets);
+    free(table);
+}
+
+// Increment the count for a given value, or add it if it's new
+static void hash_table_increment(FreqAnalysisHashTable *table, const char *value) {
+    if (!table || !value) return;
+
+    uint32_t hash = fnv1a_hash(value);
+    int index = hash % table->size;
+
+    // Find existing entry
+    for (FreqAnalysisEntry *entry = table->buckets[index]; entry; entry = entry->next) {
+        if (strcmp(entry->value, value) == 0) {
+            entry->count++;
+            return;
+        }
+    }
+
+    // Create a new entry
+    FreqAnalysisEntry *new_entry = malloc(sizeof(FreqAnalysisEntry));
+    if (!new_entry) return; // Should handle memory error more gracefully
+
+    // In a real implementation, we would use the string interning from the cache
+    // to avoid duplicating strings everywhere. For now, we just point to it.
+    // The lifecycle of this string needs to be managed carefully.
+    // Let's assume the parser gives us a stable string for the lifetime of the analysis.
+    new_entry->value = value; 
+    new_entry->count = 1;
+    new_entry->next = table->buckets[index];
+    table->buckets[index] = new_entry;
+    table->item_count++;
+}
+
+
+FreqAnalysisResult* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index) {
+    if (!viewer || !view || column_index < 0 || column_index >= (int)viewer->display_state->num_cols) {
+        return NULL;
+    }
+
+    FreqAnalysisHashTable *table = hash_table_create(viewer, INITIAL_FREQ_TABLE_SIZE);
+    if (!table) return NULL;
+
+    FieldDesc *fields = malloc(sizeof(FieldDesc) * viewer->config->max_cols);
+    char *field_buffer = malloc(viewer->config->max_field_len);
+    if (!fields || !field_buffer) {
+        free(fields);
+        free(field_buffer);
+        hash_table_destroy(table);
+        return NULL;
+    }
+    
+    size_t num_rows = view->visible_row_count;
+    for (size_t i = 0; i < num_rows; i++) {
+        size_t actual_row_index = view->visible_rows ? view->visible_rows[i] : i;
+        if (viewer->parsed_data->has_header) {
+            actual_row_index++; // Skip header row
+        }
+
+        if (actual_row_index >= viewer->parsed_data->num_lines) continue;
+
+        size_t line_offset = viewer->parsed_data->line_offsets[actual_row_index];
+        size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, line_offset, fields, viewer->config->max_cols);
+
+        if ((size_t)column_index < num_fields) {
+            render_field(&fields[column_index], field_buffer, viewer->config->max_field_len);
+            // We need to intern the string to have a stable pointer for the hash table key
+            const char* interned_value = intern_string(viewer, field_buffer);
+            hash_table_increment(table, interned_value);
+        }
+    }
+
+    free(fields);
+    free(field_buffer);
+
+    if (table->item_count == 0) {
+        hash_table_destroy(table);
+        return NULL; // No data to analyze
+    }
+
+    // Convert hash table to array for sorting
+    FreqAnalysisResult *result = calloc(1, sizeof(FreqAnalysisResult));
+    if (!result) {
+        hash_table_destroy(table); // Need to free table entries too
+        return NULL;
+    }
+
+    result->items = malloc(table->item_count * sizeof(FreqValueCount));
+    if (!result->items) {
+        free(result);
+        hash_table_destroy(table); // Need to free table entries too
+        return NULL;
+    }
+    result->count = table->item_count;
+    result->capacity = table->item_count;
+
+    int current_item = 0;
+    for (int i = 0; i < table->size; i++) {
+        FreqAnalysisEntry *entry = table->buckets[i];
+        while (entry) {
+            result->items[current_item].value = entry->value;
+            result->items[current_item].count = entry->count;
+            current_item++;
+            
+            FreqAnalysisEntry *to_free = entry;
+            entry = entry->next;
+            free(to_free); // Free the entry now that we've copied it
+        }
+    }
+    
+    // Get column name
+    char col_name_buffer[256];
+    get_column_name(viewer, column_index, col_name_buffer, sizeof(col_name_buffer));
+    result->column_name = strdup(col_name_buffer);
+
+    hash_table_destroy(table);
+
+    // Sort the results
+    qsort(result->items, result->count, sizeof(FreqValueCount), compare_freq_counts);
+
+    return result;
+}
+
+void free_frequency_analysis_result(FreqAnalysisResult *result) {
+    if (!result) return;
+    // Note: The 'value' strings are managed by the string interning system,
+    // so we do not free them here.
+    free(result->items);
+    free(result->column_name);
+    free(result);
+}
+
+// Comparison function for qsort to sort by count descending
+static int compare_freq_counts(const void *a, const void *b) {
+    const FreqValueCount *itemA = (const FreqValueCount *)a;
+    const FreqValueCount *itemB = (const FreqValueCount *)b;
+    return itemB->count - itemA->count; // Descending order
 } 

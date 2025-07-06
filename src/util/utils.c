@@ -1,8 +1,10 @@
 #include "utils.h"
 #include "logging.h"
+#include "memory/constants.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <stdint.h>
 
 // --- Timing Utilities ---
 
@@ -36,4 +38,16 @@ void* safe_realloc(void *ptr, size_t size, const char *context) {
         LOG_ERROR("Failed to reallocate %zu bytes for %s", size, context);
     }
     return new_ptr;
+}
+
+// --- Hashing ---
+// FNV-1a hash function - fast and well-distributed for string keys
+uint32_t fnv1a_hash(const char *str) {
+    CHECK_NULL_RET(str, 0);
+    uint32_t hash = FNV_OFFSET_BASIS;
+    for (const char *p = str; *p; p++) {
+        hash ^= (uint8_t)(*p);
+        hash *= FNV_PRIME;
+    }
+    return hash;
 } 

@@ -98,4 +98,15 @@ void cleanup_cache_system(struct DSVViewer *viewer);
  */
 const char* get_truncated_string(struct DSVViewer *viewer, const char* original, int width);
 
+/**
+ * @brief Intern a string, returning a unique, cached pointer.
+ * If the string has been seen before, returns a pointer to the existing
+ * copy. Otherwise, it's added to the intern pool.
+ * @param viewer Viewer instance with initialized cache
+ * @param str The string to intern.
+ * @return A pointer to the unique, interned string. Returns the original
+ *         string if the pool is full.
+ */
+const char* intern_string(struct DSVViewer *viewer, const char* str);
+
 #endif // CACHE_H 

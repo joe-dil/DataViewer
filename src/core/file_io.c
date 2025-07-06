@@ -207,6 +207,26 @@ DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
         }
         search_start = newline + 1;
     }
+
+    if (viewer->parsed_data->num_lines > 0) {
+        viewer->parsed_data->has_header = 1; // Assume header for now
+        
+        // Let's find the number of columns in the header
+        FieldDesc* temp_fields = malloc(viewer->config->max_cols * sizeof(FieldDesc));
+        if(temp_fields) {
+            size_t header_num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, 0, temp_fields, viewer->config->max_cols);
+            
+            viewer->parsed_data->num_header_fields = header_num_fields;
+            viewer->parsed_data->header_fields = malloc(header_num_fields * sizeof(FieldDesc));
+            if(viewer->parsed_data->header_fields) {
+                memcpy(viewer->parsed_data->header_fields, temp_fields, header_num_fields * sizeof(FieldDesc));
+            }
+            free(temp_fields);
+        }
+    } else {
+        viewer->parsed_data->has_header = 0;
+        viewer->parsed_data->num_header_fields = 0;
+    }
     
     // Final memory and bounds checks
     DSVResult validation_result = validate_file_bounds(viewer);

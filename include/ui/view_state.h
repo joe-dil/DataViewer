@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include "analysis.h"
 
 // Forward declaration to avoid circular dependencies
 struct DSVViewer;
@@ -18,6 +19,7 @@ typedef enum {
 typedef enum {
     PANEL_TABLE_VIEW,
     PANEL_HELP,
+    PANEL_FREQ_ANALYSIS,
     // Future: PANEL_COLUMN_STATS, PANEL_ROW_DETAILS
 } PanelType;
 
@@ -36,6 +38,12 @@ typedef struct {
         size_t selection_count;    // Number of selected rows
         size_t total_rows;         // Total rows in view (for bounds checking)
     } table_view;
+
+    // State for the Frequency Analysis Panel
+    struct {
+        FreqAnalysisResult *result;
+        size_t scroll_top;
+    } freq_analysis_view;
     
     // Future panel states can be added here
 } ViewState;

@@ -7,6 +7,9 @@
 // A component to hold parsing related data.
 typedef struct {
     char delimiter;
+    int has_header;
+    FieldDesc *header_fields;
+    size_t num_header_fields;
     FieldDesc *fields;
     size_t num_fields;
     size_t *line_offsets;

@@ -1,6 +1,7 @@
 #include "view_manager.h"
 #include "navigation.h" // For init_row_selection
 #include "app_init.h"   // For init_view_state
+#include "analysis.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -17,6 +18,9 @@ void cleanup_view_manager(ViewManager *manager) {
     View *current = manager->views;
     while (current) {
         View *next = current->next;
+        if (current->state.freq_analysis_view.result) {
+            free_frequency_analysis_result(current->state.freq_analysis_view.result);
+        }
         free(current->visible_rows);
         cleanup_row_selection(&current->state);
         free(current);

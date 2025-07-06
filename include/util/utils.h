@@ -2,6 +2,7 @@
 #define UTILS_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include "error_context.h"
 #include "logging.h"
 
@@ -19,5 +20,8 @@ void* safe_realloc(void *ptr, size_t size, const char *context);
 #define CHECK_NULL_RET(ptr, ret) do { if(!(ptr)) return (ret); } while(0)
 #define CHECK_NULL_RET_VOID(ptr) do { if(!(ptr)) return; } while(0)
 #define CHECK_ALLOC(ptr) do { if(!(ptr)) { LOG_ERROR("Allocation failed: %s:%d", __FILE__, __LINE__); return DSV_ERROR_MEMORY; } } while(0)
+
+// Hashing
+uint32_t fnv1a_hash(const char *str);
 
 #endif // UTILS_H 

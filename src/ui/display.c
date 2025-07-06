@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "highlighting.h"
 #include "navigation.h"
+#include "analysis.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
@@ -238,6 +239,10 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
     return false;  // Shouldn't reach here
 }
 
+static void display_table_view(DSVViewer *viewer, const ViewState *state);
+static void display_freq_analysis_panel(const ViewState *state);
+static void display_help_panel(void);
+
 // Draw regular data row (keep simple, it works!)
 static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_t display_row, size_t start_col, const DSVConfig *config) {
     CHECK_NULL_RET(viewer, 0);
@@ -299,6 +304,22 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
     CHECK_NULL_RET_VOID(viewer);
     CHECK_NULL_RET_VOID(state);
 
+    switch (state->current_panel) {
+        case PANEL_TABLE_VIEW:
+            display_table_view(viewer, state);
+            break;
+        case PANEL_FREQ_ANALYSIS:
+            display_freq_analysis_panel(state);
+            break;
+        case PANEL_HELP:
+            display_help_panel();
+            break;
+    }
+
+    refresh();
+}
+
+static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     View *current_view = viewer->view_manager->current;
     size_t start_row = state->table_view.table_start_row;
     size_t start_col = state->table_view.table_start_col;
@@ -388,8 +409,51 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
                  total_rows_in_view,
                  state->table_view.selection_count);
     }
+}
+
+static void display_freq_analysis_panel(const ViewState *state) {
+    clear();
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    FreqAnalysisResult *result = state->freq_analysis_view.result;
+    if (!result) {
+        mvprintw(0, 0, "Error: No analysis results available.");
+        return;
+    }
+
+    // --- Header ---
+    attron(A_BOLD | A_UNDERLINE);
+    mvprintw(0, 2, "Frequency Analysis: %s", result->column_name);
+    attroff(A_BOLD | A_UNDERLINE);
     
-    refresh();
+    mvprintw(2, 2, "Value");
+    mvprintw(2, cols / 2, "Count");
+    mvhline(3, 0, ACS_HLINE, cols);
+
+    // --- Content ---
+    int content_rows = rows - 4; // Header and footer lines
+    for (int i = 0; i < content_rows; i++) {
+        int screen_row = i + 4;
+        size_t data_row = state->freq_analysis_view.scroll_top + i;
+
+        if (data_row >= (size_t)result->count) {
+            break;
+        }
+
+        // Value Column
+        mvprintw(screen_row, 2, "%.*s", (cols / 2) - 3, result->items[data_row].value);
+
+        // Count Column
+        mvprintw(screen_row, cols / 2, "%d", result->items[data_row].count);
+    }
+    
+    // --- Footer ---
+    mvprintw(rows - 1, 2, "Press 'q' or 'Esc' to close. Use Arrow Keys to scroll.");
+}
+
+static void display_help_panel(void) {
+    show_help();
 }
 
 void show_help(void) {
