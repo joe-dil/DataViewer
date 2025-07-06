@@ -54,4 +54,4 @@ The project uses an enhanced Makefile with:
 - Automatic delimiter detection
 - Unicode/UTF-8 support
 - Column width analysis
-- Terminal resize handling 
+- Terminal resize handling - eh
