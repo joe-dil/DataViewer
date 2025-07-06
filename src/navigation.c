@@ -13,7 +13,11 @@ void run_viewer(DSVViewer *viewer) {
     while (1) {
         // Only redraw when needed
         if (view_state.needs_redraw) {
-            display_data(viewer, view_state.table_view.table_start_row, view_state.table_view.table_start_col);
+            display_data(viewer, 
+                        view_state.table_view.table_start_row, 
+                        view_state.table_view.table_start_col,
+                        view_state.table_view.cursor_row,
+                        view_state.table_view.cursor_col);
             view_state.needs_redraw = false;
         }
 

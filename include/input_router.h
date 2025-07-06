@@ -30,6 +30,8 @@ typedef struct {
     struct {
         size_t table_start_row;
         size_t table_start_col;
+        size_t cursor_row;      // Current cursor row position in data
+        size_t cursor_col;      // Current cursor column position in data
     } table_view;
     
     // Future panel states can be added here

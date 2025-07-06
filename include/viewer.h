@@ -71,8 +71,10 @@ void render_field(const FieldDesc* field, char* buffer, size_t buffer_size);
  * @param viewer Viewer instance
  * @param start_row First row to display (0-based)
  * @param start_col First column to display (0-based)
+ * @param cursor_row Cursor row position (0-based)
+ * @param cursor_col Cursor column position (0-based)
  */
-void display_data(DSVViewer *viewer, size_t start_row, size_t start_col);
+void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t cursor_row, size_t cursor_col);
 
 /**
  * @brief Show help screen with navigation commands.
