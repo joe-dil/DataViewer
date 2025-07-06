@@ -18,8 +18,8 @@ static const char latin1_data[] = "Name,Age,City\nJean,25,Montr\xe9\x61l\nMarie,
 // Pure ASCII data
 static const char ascii_data[] = "Name,Age,City\nJohn,25,Boston\nMary,30,Denver";
 
-// Mixed content that could be ambiguous
-static const char mixed_data[] = "Name,Value\nTest,\x80\x81\x82";
+// Mixed content that could be ambiguous (reserved for future tests)
+// static const char mixed_data[] = "Name,Value\nTest,\x80\x81\x82";
 
 // --- Test Configuration Setup ---
 
