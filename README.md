@@ -1,57 +1,63 @@
-# DSV Viewer
+# DataViewer
 
-A fast, terminal-based viewer for delimiter-separated value files (CSV, TSV, etc.).
-
-## Quick Start
-
-```bash
-# Build optimized release version
-make
-
-# Build debug version with address sanitizer
-make debug
-
-# View a CSV file
-./bin/viewer file.csv
-
-# View with custom delimiter
-./bin/viewer file.tsv -d $'\t'
-```
-
-## Build System
-
-The project uses an enhanced Makefile with:
-
-- **Incremental compilation**: Only changed files are recompiled
-- **Automatic dependency tracking**: Header changes trigger recompilation of dependent files
-- **Release/Debug targets**: Optimized production builds and debug builds with sanitizers
-- **Clean separation**: Library code separate from main executable
-
-### Build Targets
-
-- `make` or `make release` - Optimized release build
-- `make debug` - Debug build with address sanitizer and debugging symbols
-- `make clean` - Remove all build artifacts
-- `make test` - Run unit tests
-- `make help` - Show all available targets
-
-### Dependencies
-
-- **ncurses** - Terminal UI library
-- **pthread** - Threading support (linked but not actively used)
-
-## Navigation
-
-- **Arrow Keys** - Navigate between fields
-- **Page Up/Down** - Scroll pages
-- **Home/End** - Go to beginning/end
-- **q** - Quit
-- **h** - Help
+A blazingly fast, memory-efficient, terminal-based viewer for CSV files and other delimited data.
 
 ## Features
 
-- Memory-mapped file loading for large files
-- Automatic delimiter detection
-- Unicode/UTF-8 support
-- Column width analysis
-- Terminal resize handling - eh
+- **High Performance**: Uses memory-mapped I/O to handle files of any size with minimal memory usage.
+- **Smart Parsing**: Automatically detects common delimiters (`,`, `;`, `|`, `\t`).
+- **Encoding Support**: Correctly renders UTF-8 and Latin-1 encoded files.
+
+## Building
+
+### Dependencies
+- A C compiler (`gcc` or `clang`)
+- `make`
+- `ncurses` development libraries
+
+On macOS (with Homebrew):
+```bash
+brew install ncurses
+```
+On Debian/Ubuntu:
+```bash
+sudo apt-get update && sudo apt-get install build-essential libncurses-dev
+```
+
+### Compilation
+Build the optimized release version:
+```bash
+make
+```
+Build a debug version with address sanitizer:
+```bash
+make debug
+```
+
+## Usage
+
+To view a file:
+```bash
+./bin/dv <your_file.csv>
+```
+
+### In-App Commands
+| Key(s)       | Action                         |
+|--------------|--------------------------------|
+| `q`          | Quit the application           |
+| `h`          | Show the help screen           |
+| `Arrow Keys` | Navigate between cells/rows    |
+| `Page Up/Dn` | Scroll up or down by one page  |
+| `Home`/`End` | Jump to the top/bottom of file |
+| `y`          | Copy cell content to clipboard |
+
+## Development
+
+Run the test suite:
+```bash
+make test
+```
+Clean the build artifacts:
+```bash
+make clean
+```
