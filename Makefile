@@ -1,5 +1,13 @@
 CC = gcc
-CFLAGS_BASE = -Wall -Wextra -std=c99 -Iinclude
+
+INCLUDES = -Iinclude \
+           -Iinclude/util \
+           -Iinclude/memory \
+           -Iinclude/core \
+           -Iinclude/ui \
+           -Iinclude/app
+
+CFLAGS_BASE = -Wall -Wextra -std=c99 $(INCLUDES)
 CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -flto -DNDEBUG
 CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG -fsanitize=address
 CFLAGS = $(CFLAGS_RELEASE)
@@ -10,18 +18,15 @@ BINDIR = bin
 DEPDIR = deps
 TARGET = $(BINDIR)/dv
 
-# Source files
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/app_init.c $(SRCDIR)/display.c $(SRCDIR)/app_loop.c \
-          $(SRCDIR)/navigation.c $(SRCDIR)/parser.c $(SRCDIR)/file_io.c $(SRCDIR)/analysis.c \
-          $(SRCDIR)/config.c $(SRCDIR)/logging.c $(SRCDIR)/utils.c $(SRCDIR)/cache.c \
-          $(SRCDIR)/buffer_pool.c $(SRCDIR)/error_context.c $(SRCDIR)/input_router.c \
-          $(SRCDIR)/encoding.c
+# Source files discovery
+ALL_SOURCES   = $(shell find $(SRCDIR) -name '*.c')
+LIB_SOURCES   = $(filter-out $(SRCDIR)/app/main.c, $(ALL_SOURCES))
+MAIN_SOURCE   = $(SRCDIR)/app/main.c
 
-# All .c files in the src directory, excluding main.c
-LIB_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
-LIB_OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
-MAIN_OBJECT = $(OBJDIR)/main.o
-DEPENDENCIES = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(wildcard $(SRCDIR)/*.c))
+# Object and dependency lists
+LIB_OBJECTS   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
+MAIN_OBJECT   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(MAIN_SOURCE))
+DEPENDENCIES  = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(ALL_SOURCES))
 
 .PHONY: all clean test valgrind release debug
 
@@ -43,7 +48,7 @@ $(TARGET): $(MAIN_OBJECT) $(LIB_OBJECTS)
 
 # Object compilation with automatic dependency generation
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
-	@mkdir -p $(@D) $(DEPDIR)
+	@mkdir -p $(dir $@) $(dir $(DEPDIR)/$*.d)
 	$(CC) $(CFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -c $< -o $@
 
 # Include dependency files if they exist

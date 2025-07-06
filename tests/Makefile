@@ -1,6 +1,15 @@
 # Inherit compiler and flags from the parent Makefile for consistency
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -std=c99 -g -O0 -I../include -I.
+
+TEST_INCLUDES = -I../include \
+                -I../include/util \
+                -I../include/memory \
+                -I../include/core \
+                -I../include/ui \
+                -I../include/app \
+                -I.
+
+CFLAGS ?= -Wall -Wextra -std=c99 -g -O0 $(TEST_INCLUDES)
 LIBS ?= -lncurses -lpthread
 
 # Directories
@@ -15,7 +24,7 @@ TEST_TARGET = $(BINDIR)/test_runner
 
 # Source files
 # Include all application sources EXCEPT main.c
-APP_SOURCES = $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
+APP_SOURCES = $(filter-out $(SRCDIR)/app/main.c, $(shell find $(SRCDIR) -name '*.c'))
 # Include all test framework, unit test, and integration test sources
 TEST_SOURCES = $(wildcard $(TEST_FRAMEWORK_DIR)/*.c) $(wildcard $(TEST_UNIT_DIR)/*.c) $(wildcard integration/*.c) test_main.c
 
