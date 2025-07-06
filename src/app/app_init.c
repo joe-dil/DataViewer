@@ -7,6 +7,7 @@
 #include "logging.h"
 #include "error_context.h"
 #include "buffer_pool.h"
+#include "view_manager.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -50,6 +51,17 @@ static DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfi
         viewer->display_state = NULL;
         return DSV_ERROR_MEMORY;
     }
+
+    viewer->view_manager = init_view_manager();
+    if (!viewer->view_manager) {
+        LOG_ERROR("Failed to initialize ViewManager");
+        free(viewer->parsed_data);
+        free(viewer->file_data);
+        cleanup_buffer_pool(&viewer->display_state->buffers);
+        free(viewer->display_state);
+        return DSV_ERROR_MEMORY;
+    }
+
     return DSV_OK;
 }
 
@@ -64,6 +76,7 @@ static void cleanup_viewer_resources(struct DSVViewer *viewer) {
 void cleanup_viewer(DSVViewer *viewer) {
     if (!viewer) return;
 
+    cleanup_view_manager(viewer->view_manager);
     cleanup_file_data(viewer); // from file_io.h
     cleanup_cache_system(viewer); // from cache.h
     cleanup_viewer_resources(viewer);
@@ -192,4 +205,20 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
     LOG_INFO("Viewer initialized successfully.");
     return DSV_OK;
+}
+
+void init_view_state(ViewState *state) {
+    state->current_panel = PANEL_TABLE_VIEW;
+    state->needs_redraw = true;
+    state->table_view.table_start_row = 0;
+    state->table_view.table_start_col = 0;
+    state->table_view.cursor_row = 0;
+    state->table_view.cursor_col = 0;
+    
+    // Make sure selection state is zeroed out
+    state->table_view.row_selected = NULL;
+    state->table_view.selection_count = 0;
+    state->table_view.total_rows = 0;
+    state->table_view.selection_anchor = 0;
+    state->table_view.in_selection_mode = false;
 } 

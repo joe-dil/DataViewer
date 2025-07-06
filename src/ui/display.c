@@ -4,10 +4,25 @@
 #include "cache.h"
 #include "utils.h"
 #include "highlighting.h"
+#include "navigation.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
 #include <stdbool.h>
+
+#define COLOR_PAIR_SELECTED 2
+
+static size_t get_file_row(const DSVViewer *viewer, size_t display_row) {
+    View *current_view = viewer->view_manager->current;
+    if (!current_view || !current_view->visible_rows) {
+        // This is the main view, rows map directly
+        return display_row;
+    }
+    if (display_row >= current_view->visible_row_count) {
+        return (size_t)-1; // Invalid row
+    }
+    return current_view->visible_rows[display_row];
+}
 
 // Simple helper: get column width with fallback
 static int get_column_width(DSVViewer *viewer, size_t col) {
@@ -224,9 +239,24 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
 }
 
 // Draw regular data row (keep simple, it works!)
-static int draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
+static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_t display_row, size_t start_col, const DSVConfig *config) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(config, 0);
+
+    size_t file_line_unadjusted = get_file_row(viewer, display_row);
+    if (file_line_unadjusted == (size_t)-1) {
+        return 0; // Row is not visible in this view
+    }
+
+    size_t file_line = file_line_unadjusted;
+    if (viewer->display_state->show_header) {
+        file_line++;
+    }
+
+    bool is_selected = is_row_selected(state, display_row);
+    if (is_selected) {
+        attron(COLOR_PAIR(COLOR_PAIR_SELECTED));
+    }
     
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -257,12 +287,23 @@ static int draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t star
             x += SEPARATOR_WIDTH;
         }
     }
+
+    if (is_selected) {
+        attroff(COLOR_PAIR(COLOR_PAIR_SELECTED));
+    }
     
     return x; // Return the actual content width
 }
 
-void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t cursor_row, size_t cursor_col) {
+void display_data(DSVViewer *viewer, const ViewState *state) {
     CHECK_NULL_RET_VOID(viewer);
+    CHECK_NULL_RET_VOID(state);
+
+    View *current_view = viewer->view_manager->current;
+    size_t start_row = state->table_view.table_start_row;
+    size_t start_col = state->table_view.table_start_col;
+    size_t cursor_row = state->table_view.cursor_row;
+    size_t cursor_col = state->table_view.cursor_col;
     
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -284,24 +325,18 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
         move(screen_row, 0);
         clrtoeol();
         
-        // Calculate which data row we're displaying (0-based index, excluding header)
-        size_t data_row_index = start_row + screen_row - screen_start_row;
+        // Calculate which data row we're displaying (0-based index into the current view)
+        size_t view_data_row = start_row + screen_row - screen_start_row;
         
-        // Calculate the actual file line to display
-        size_t file_line = data_row_index;
-        if (viewer->display_state->show_header) {
-            file_line++;  // Skip header line in file
-        }
-        
-        if (file_line >= viewer->parsed_data->num_lines) {
-            // Clear remaining lines if no more data
+        if (view_data_row >= current_view->visible_row_count) {
+            // Clear remaining lines if no more data in this view
             continue;
         }
 
-        int content_width = draw_data_row(screen_row, viewer, file_line, start_col, viewer->config);
+        int content_width = draw_data_row(screen_row, viewer, state, view_data_row, start_col, viewer->config);
         
         // Apply row highlighting if this is the cursor row
-        if (data_row_index == cursor_row) {
+        if (view_data_row == cursor_row) {
             apply_row_highlight(screen_row, 0, content_width);
         }
     }
@@ -334,28 +369,24 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
         // Clear the flag after showing (it will be shown once)
         viewer->display_state->show_copy_status = 0;
     } else {
-        // Show normal status line
-        // Updated status line to show cursor position
-        size_t display_cursor_row = cursor_row + 1;  // Convert to 1-based
-        if (viewer->display_state->show_header) {
-            display_cursor_row++;  // Account for header being row 1
-        }
-        
+        View *current_view = viewer->view_manager->current;
+        size_t total_rows_in_view = current_view->visible_row_count;
+        size_t display_cursor_row = cursor_row + 1;
+
         size_t first_visible = start_row + 1;
-        size_t last_visible = start_row + display_rows - (viewer->display_state->show_header ? 1 : 0);
-        if (viewer->display_state->show_header) {
-            first_visible++;  // Account for header being row 1
-            last_visible++;   // Account for header being row 1
+        size_t last_visible = start_row + display_rows - screen_start_row;
+        if (last_visible > total_rows_in_view) {
+            last_visible = total_rows_in_view;
         }
-        if (last_visible > viewer->parsed_data->num_lines) {
-            last_visible = viewer->parsed_data->num_lines;
-        }
-        
-        mvprintw(rows - 1, 0, "Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu lines | q: quit | h: help",
+
+        // Show view info and normal status line
+        mvprintw(rows - 1, 0, "%s | Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu | sel: %zu",
+                 current_view->name,
                  display_cursor_row, cursor_col + 1,
                  first_visible,
                  last_visible,
-                 viewer->parsed_data->num_lines);
+                 total_rows_in_view,
+                 state->table_view.selection_count);
     }
     
     refresh();
@@ -365,21 +396,26 @@ void show_help(void) {
     clear();
     mvprintw(1, HELP_INDENT_COL, "DSV (Delimiter-Separated Values) Viewer - Help");
     mvprintw(3, HELP_INDENT_COL, "Navigation:");
-    mvprintw(4, HELP_ITEM_INDENT_COL, "Arrow Keys    - Jump between fields/scroll");
-    mvprintw(5, HELP_ITEM_INDENT_COL, "Page Up/Down  - Scroll pages");
-    mvprintw(6, HELP_ITEM_INDENT_COL, "Home          - Go to beginning");
-    mvprintw(7, HELP_ITEM_INDENT_COL, "End           - Go to end");
-    mvprintw(8, HELP_ITEM_INDENT_COL, "Mouse Scroll  - Fine character movement");
-    mvprintw(HELP_COMMANDS_ROW, HELP_INDENT_COL, "Commands:");
-    mvprintw(11, HELP_ITEM_INDENT_COL, "q             - Quit");
-    mvprintw(12, HELP_ITEM_INDENT_COL, "h             - Show this help");
-    mvprintw(13, HELP_ITEM_INDENT_COL, "y             - Copy current cell to clipboard");
-    mvprintw(HELP_FEATURES_ROW, HELP_INDENT_COL, "Features:");
-    mvprintw(15, HELP_ITEM_INDENT_COL, "- Fast loading of large files (memory mapped)");
-    mvprintw(16, HELP_ITEM_INDENT_COL, "- Auto-detection of delimiters (, | ; tab)");
-    mvprintw(17, HELP_ITEM_INDENT_COL, "- Arrow keys jump between fields");
-    mvprintw(18, HELP_ITEM_INDENT_COL, "- Mouse wheel for fine scrolling");
-    mvprintw(20, HELP_INDENT_COL, "Press any key to return...");
+    mvprintw(4, HELP_ITEM_INDENT_COL, "Arrow Keys    - Move cursor");
+    mvprintw(5, HELP_ITEM_INDENT_COL, "Page Up/Down  - Scroll by a full page");
+    mvprintw(6, HELP_ITEM_INDENT_COL, "Home/End      - Go to start/end of row/file");
+    
+    mvprintw(8, HELP_INDENT_COL, "Row Selection:");
+    mvprintw(9, HELP_ITEM_INDENT_COL, "Space         - Toggle selection for the current row");
+    mvprintw(10, HELP_ITEM_INDENT_COL, "Shift+Up/Down - Select a range of rows");
+    mvprintw(11, HELP_ITEM_INDENT_COL, "A or ESC      - Clear all selections");
+
+    mvprintw(13, HELP_INDENT_COL, "Views:");
+    mvprintw(14, HELP_ITEM_INDENT_COL, "v             - Create a new view from selected rows");
+    mvprintw(15, HELP_ITEM_INDENT_COL, "Tab/Shift+Tab - Cycle through open views");
+    mvprintw(16, HELP_ITEM_INDENT_COL, "x             - Close the current view (except Main)");
+
+    mvprintw(18, HELP_INDENT_COL, "General:");
+    mvprintw(19, HELP_ITEM_INDENT_COL, "y             - Copy current cell to clipboard");
+    mvprintw(20, HELP_ITEM_INDENT_COL, "h             - Show this help screen");
+    mvprintw(21, HELP_ITEM_INDENT_COL, "q             - Quit the application");
+
+    mvprintw(23, HELP_INDENT_COL, "Press any key to return...");
     refresh();
     getch();
 } 

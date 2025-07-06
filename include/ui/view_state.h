@@ -32,6 +32,11 @@ typedef struct {
         size_t table_start_col;
         size_t cursor_row;      // Current cursor row position in data
         size_t cursor_col;      // Current cursor column position in data
+        bool *row_selected;        // Bitmap for row selection
+        size_t selection_count;    // Number of selected rows
+        size_t total_rows;         // Total rows in view (for bounds checking)
+        size_t selection_anchor;   // Anchor point for shift-selection
+        bool in_selection_mode;    // Currently doing shift-selection
     } table_view;
     
     // Future panel states can be added here

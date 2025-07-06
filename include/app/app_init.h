@@ -8,6 +8,7 @@
 #include "parsed_data.h"
 #include "config.h"
 #include "buffer_pool.h"
+#include "view_manager.h"
 
 // Forward declarations for cache components
 struct DisplayCache;
@@ -31,6 +32,7 @@ typedef struct DSVViewer {
     struct Cache *cache;
     struct ErrorContext *error_context;
     BufferPool *buffer_pool;
+    ViewManager *view_manager;
 } DSVViewer;
 
 // Core application function declarations
@@ -78,12 +80,9 @@ void render_field(const FieldDesc* field, char* buffer, size_t buffer_size);
 /**
  * @brief Display CSV data starting from specified position.
  * @param viewer Viewer instance
- * @param start_row First row to display (0-based)
- * @param start_col First column to display (0-based)
- * @param cursor_row Cursor row position (0-based)
- * @param cursor_col Cursor column position (0-based)
+ * @param state Current view state including cursor and scroll positions
  */
-void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t cursor_row, size_t cursor_col);
+void display_data(DSVViewer *viewer, const ViewState *state);
 
 /**
  * @brief Show help screen with navigation commands.
@@ -97,5 +96,11 @@ void show_help(void);
  * @param viewer Viewer instance to run
  */
 void run_viewer(DSVViewer *viewer);
+
+/**
+ * @brief Initialize a new ViewState object.
+ * @param state The ViewState to initialize.
+ */
+void init_view_state(ViewState *state);
 
 #endif // APP_INIT_H 

@@ -3,6 +3,8 @@
 #include "constants.h"
 #include <ncurses.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Helper function to check if a column is fully visible in the current viewport
 static bool is_column_fully_visible(const DSVViewer *viewer, size_t start_col, size_t target_col, int screen_width) {
@@ -84,10 +86,7 @@ void navigate_down(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->parsed_data->num_lines;
-    if (viewer->display_state->show_header && viewer->parsed_data->num_lines > 0) {
-        data_rows--;
-    }
+    size_t data_rows = viewer->view_manager->current->visible_row_count;
 
     if (state->table_view.cursor_row + 1 < data_rows) {
         state->table_view.cursor_row++;
@@ -151,10 +150,7 @@ void navigate_page_down(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->parsed_data->num_lines;
-    if (viewer->display_state->show_header && viewer->parsed_data->num_lines > 0) {
-        data_rows--;
-    }
+    size_t data_rows = viewer->view_manager->current->visible_row_count;
 
     state->table_view.table_start_row += visible_rows;
     if (state->table_view.table_start_row >= data_rows) {
@@ -186,10 +182,7 @@ void navigate_end(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->parsed_data->num_lines;
-    if (viewer->display_state->show_header && viewer->parsed_data->num_lines > 0) {
-        data_rows--;
-    }
+    size_t data_rows = viewer->view_manager->current->visible_row_count;
 
     state->table_view.cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
     state->table_view.cursor_col = (viewer->display_state->num_cols > 0)
@@ -205,4 +198,110 @@ void navigate_end(ViewState *state, const struct DSVViewer *viewer) {
         state->table_view.table_start_col = find_start_col_for_target(
             viewer, state->table_view.cursor_col, cols);
     }
+}
+
+// Row selection functions
+void init_row_selection(ViewState *state, size_t total_rows) {
+    state->table_view.total_rows = total_rows;
+    state->table_view.row_selected = calloc(total_rows, sizeof(bool));
+    if (!state->table_view.row_selected) {
+        // In a real app, you'd have better error handling.
+        // For now, we'll proceed without selection capabilities.
+        state->table_view.total_rows = 0;
+        return;
+    }
+    state->table_view.selection_count = 0;
+    state->table_view.selection_anchor = 0;
+    state->table_view.in_selection_mode = false;
+}
+
+void cleanup_row_selection(ViewState *state) {
+    if (state->table_view.row_selected) {
+        free(state->table_view.row_selected);
+        state->table_view.row_selected = NULL;
+    }
+    state->table_view.total_rows = 0;
+    state->table_view.selection_count = 0;
+}
+
+void toggle_row_selection(ViewState *state, size_t row) {
+    if (row >= state->table_view.total_rows) return;
+
+    if (state->table_view.row_selected[row]) {
+        state->table_view.row_selected[row] = false;
+        state->table_view.selection_count--;
+    } else {
+        state->table_view.row_selected[row] = true;
+        state->table_view.selection_count++;
+    }
+}
+
+bool is_row_selected(const ViewState *state, size_t row) {
+    if (row >= state->table_view.total_rows || !state->table_view.row_selected) {
+        return false;
+    }
+    return state->table_view.row_selected[row];
+}
+
+void clear_all_selections(ViewState *state) {
+    if (!state->table_view.row_selected) return;
+    memset(state->table_view.row_selected, 0, state->table_view.total_rows * sizeof(bool));
+    state->table_view.selection_count = 0;
+}
+
+size_t get_selected_rows(const ViewState *state, size_t **rows) {
+    if (state->table_view.selection_count == 0) {
+        *rows = NULL;
+        return 0;
+    }
+
+    *rows = malloc(state->table_view.selection_count * sizeof(size_t));
+    if (!*rows) {
+        return 0; // Allocation failed
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < state->table_view.total_rows && count < state->table_view.selection_count; i++) {
+        if (state->table_view.row_selected[i]) {
+            (*rows)[count++] = i;
+        }
+    }
+    return count;
+}
+
+void select_range(ViewState *state, size_t from, size_t to) {
+    for (size_t i = from; i <= to && i < state->table_view.total_rows; i++) {
+        if (!state->table_view.row_selected[i]) {
+            state->table_view.row_selected[i] = true;
+            state->table_view.selection_count++;
+        }
+    }
+}
+
+void begin_selection_mode(ViewState *state, size_t anchor) {
+    if (anchor >= state->table_view.total_rows) return;
+    state->table_view.selection_anchor = anchor;
+    state->table_view.in_selection_mode = true;
+    // Select the anchor point
+    if (!state->table_view.row_selected[anchor]) {
+        toggle_row_selection(state, anchor);
+    }
+}
+
+void update_selection_mode(ViewState *state, size_t current) {
+    if (!state->table_view.in_selection_mode) return;
+    
+    // Clear all selections first
+    clear_all_selections(state);
+    
+    // Select range from anchor to current
+    size_t from = state->table_view.selection_anchor;
+    size_t to = current;
+    if (from > to) {
+        size_t temp = from;
+        from = to;
+        to = temp;
+    }
+    
+    select_range(state, from, to);
 } 

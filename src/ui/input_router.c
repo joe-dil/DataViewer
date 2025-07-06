@@ -124,29 +124,102 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
     
     switch (ch) {
         case KEY_UP:
+        case KEY_SR: // Shift+Up
+            if (ch == KEY_UP) {
+                state->table_view.in_selection_mode = false;
+            } else { // KEY_SR
+                if (!state->table_view.in_selection_mode) {
+                    begin_selection_mode(state, state->table_view.cursor_row);
+                }
+            }
             navigate_up(state);
+            if (ch == KEY_SR) {
+                update_selection_mode(state, state->table_view.cursor_row);
+            }
             break;
         case KEY_DOWN:
+        case KEY_SF: // Shift+Down
+            if (ch == KEY_DOWN) {
+                state->table_view.in_selection_mode = false;
+            } else { // KEY_SF
+                if (!state->table_view.in_selection_mode) {
+                    begin_selection_mode(state, state->table_view.cursor_row);
+                }
+            }
             navigate_down(state, viewer);
+            if (ch == KEY_SF) {
+                update_selection_mode(state, state->table_view.cursor_row);
+            }
             break;
         case KEY_LEFT:
+            state->table_view.in_selection_mode = false;
             navigate_left(state);
             break;
         case KEY_RIGHT:
+            state->table_view.in_selection_mode = false;
             navigate_right(state, viewer);
             break;
         case KEY_PPAGE:
+            state->table_view.in_selection_mode = false;
             navigate_page_up(state, viewer);
             break;
         case KEY_NPAGE:
+            state->table_view.in_selection_mode = false;
             navigate_page_down(state, viewer);
             break;
         case KEY_HOME:
+            state->table_view.in_selection_mode = false;
             navigate_home(state);
             break;
         case KEY_END:
+            state->table_view.in_selection_mode = false;
             navigate_end(state, viewer);
             break;
+        case ' ':
+            toggle_row_selection(state, state->table_view.cursor_row);
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+        case 'A':
+        case 27: // ESC key
+            if (state->table_view.selection_count > 0) {
+                clear_all_selections(state);
+                state->table_view.in_selection_mode = false;
+                state->needs_redraw = true;
+            }
+            // If no selection, ESC does nothing here, might be handled globally later.
+            return INPUT_CONSUMED;
+        case 'v':
+            if (state->table_view.selection_count > 0) {
+                size_t *rows = NULL;
+                size_t count = get_selected_rows(state, &rows);
+                if (count > 0) {
+                    create_view_from_selection(viewer->view_manager, state, rows, count);
+                    // The create function copies the rows, so we must free them here.
+                    free(rows);
+                    // Per instructions, clear selection after creating a view
+                    clear_all_selections(state);
+                    state->table_view.in_selection_mode = false;
+                    state->needs_redraw = true;
+                }
+            }
+            return INPUT_CONSUMED;
+        case '\t': // Tab
+            switch_to_next_view(viewer->view_manager);
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+        case KEY_BTAB: // Shift+Tab
+            switch_to_prev_view(viewer->view_manager);
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+        case 'x':
+            if (viewer->view_manager->view_count > 1) {
+                close_current_view(viewer->view_manager);
+                // The state pointer is now invalid, but we are just setting a flag
+                // on the new current view. The state is fetched again at the
+                // start of the loop in app_loop.c
+                viewer->view_manager->current->state.needs_redraw = true;
+            }
+            return INPUT_CONSUMED;
         case 'y':  // Copy current cell to clipboard
             {
                 // Get the field value at cursor position

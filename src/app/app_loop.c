@@ -1,36 +1,35 @@
 #include "app_init.h"
 #include "input_router.h"
 #include "view_state.h"
+#include "navigation.h"
+#include "parsed_data.h"
+#include "view_manager.h"
 #include <ncurses.h>
 #include <stdbool.h>
 
-void init_view_state(ViewState *state) {
-    state->current_panel = PANEL_TABLE_VIEW;
-    state->needs_redraw = true;
-    state->table_view.table_start_row = 0;
-    state->table_view.table_start_col = 0;
-    // Note: cursor_row will need to be initialized after we know if headers are shown
-    // For now, default to 0, but the main program should adjust this
-    state->table_view.cursor_row = 0;
-    state->table_view.cursor_col = 0;
-}
-
 void run_viewer(DSVViewer *viewer) {
-    ViewState view_state;
-    init_view_state(&view_state);
-    
-    // Force initial draw
-    view_state.needs_redraw = true;
+    // Create the initial state that will be moved into the main view
+    ViewState initial_state;
+    init_view_state(&initial_state);
+    init_row_selection(&initial_state, viewer->parsed_data->num_lines);
+
+    // Create the main view from this state
+    View *main_view = create_main_view(&initial_state, viewer->parsed_data->num_lines);
+    if (!main_view) {
+        return; // Failed to create main view
+    }
+
+    viewer->view_manager->views = main_view;
+    viewer->view_manager->current = main_view;
+    viewer->view_manager->view_count = 1;
 
     while (1) {
+        ViewState *current_state = &viewer->view_manager->current->state;
+
         // Only redraw when needed
-        if (view_state.needs_redraw) {
-            display_data(viewer, 
-                        view_state.table_view.table_start_row, 
-                        view_state.table_view.table_start_col,
-                        view_state.table_view.cursor_row,
-                        view_state.table_view.cursor_col);
-            view_state.needs_redraw = false;
+        if (current_state->needs_redraw) {
+            display_data(viewer, current_state);
+            current_state->needs_redraw = false;
         }
 
         int ch = getch();
@@ -41,7 +40,7 @@ void run_viewer(DSVViewer *viewer) {
         }
         
         // Route input through the new input router
-        InputResult result = route_input(ch, viewer, &view_state);
+        InputResult result = route_input(ch, viewer, current_state);
         
         switch (result) {
             case INPUT_CONSUMED:
@@ -54,20 +53,20 @@ void run_viewer(DSVViewer *viewer) {
                 
             case INPUT_GLOBAL: {
                 // Handle global commands
-                GlobalResult global_result = handle_global_input(ch, &view_state);
+                GlobalResult global_result = handle_global_input(ch, current_state);
                 switch (global_result) {
                     case GLOBAL_QUIT:
                         return;  // Exit the viewer
                         
                     case GLOBAL_SHOW_HELP:
                         show_help();
-                        view_state.needs_redraw = true;  // Redraw after modal
+                        current_state->needs_redraw = true;  // Redraw after modal
                         break;
                         
                     case GLOBAL_SWITCH_PANEL:
                         // Future: Handle panel switching
                         // For now, just force redraw
-                        view_state.needs_redraw = true;
+                        current_state->needs_redraw = true;
                         break;
                         
                     case GLOBAL_CONTINUE:

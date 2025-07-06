@@ -63,12 +63,16 @@ int main(int argc, char *argv[]) {
 
 #ifndef TEST_BUILD
     initscr();
-    start_color();
-    init_pair(1, COLOR_GREEN, COLOR_BLACK);
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     curs_set(0);
+    start_color();
+    init_pair(1, COLOR_GREEN, COLOR_BLACK);
+    init_pair(2, COLOR_YELLOW, COLOR_BLACK);
+    
+    // Set up mouse events if supported
+    mouseinterval(0); // Disable click delay
 #endif
     
     run_viewer(&viewer);
