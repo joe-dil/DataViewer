@@ -3,6 +3,7 @@
 #include <string.h>
 #include <locale.h>
 #include <ncurses.h>
+#include <stdbool.h>
 #include "logging.h"
 #include "error_context.h"
 
@@ -13,13 +14,14 @@ int main(int argc, char *argv[]) {
     setlocale(LC_ALL, "");
 
     if (argc < 2) {
-        LOG_ERROR("Usage: %s <filename> [--config <config_file>] [-d <delimiter>]", argv[0]);
+        LOG_ERROR("Usage: %s <filename> [--config <config_file>] [-d <delimiter>] [--headerless]", argv[0]);
         return 1;
     }
 
     const char *filename = argv[1];
     const char *config_filename = NULL;
     char delimiter = 0;
+    bool show_header = true;
 
     // --- Argument Parsing ---
     for (int i = 2; i < argc; i++) {
@@ -27,6 +29,8 @@ int main(int argc, char *argv[]) {
             config_filename = argv[++i];
         } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
             delimiter = argv[++i][0];
+        } else if (strcmp(argv[i], "--headerless") == 0) {
+            show_header = false;
         }
     }
 
@@ -53,6 +57,9 @@ int main(int argc, char *argv[]) {
         cleanup_viewer(&viewer);
         return 1;
     }
+    
+    // Apply header visibility setting
+    viewer.display_state->show_header = show_header;
 
 #ifndef TEST_BUILD
     initscr();

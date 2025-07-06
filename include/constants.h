@@ -6,6 +6,9 @@
 #define DEFAULT_COL_WIDTH 12
 #define COLOR_PAIR_HEADER 1
 
+// Highlighting mode
+#define USE_INVERTED_HIGHLIGHT 1  // Use inverted colors for row/column highlighting
+
 // Buffer Sizes
 #define DEFAULT_BUFFER_SIZE 8192
 #define MAX_COLS 256

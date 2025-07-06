@@ -3,6 +3,7 @@
 #include "display_state.h"
 #include "cache.h"
 #include "utils.h"
+#include "highlighting.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
@@ -154,9 +155,9 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
 }
 
 // Draw regular data row (keep simple, it works!)
-static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
-    CHECK_NULL_RET_VOID(viewer);
-    CHECK_NULL_RET_VOID(config);
+static int draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t start_col, const DSVConfig *config) {
+    CHECK_NULL_RET(viewer, 0);
+    CHECK_NULL_RET(config, 0);
     
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -171,6 +172,8 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         int col_width = get_column_width(viewer, col);
         
         const char *display_string = render_column_content(viewer, col, col_width);
+        
+        // Draw the field content
         mvaddstr(y, x, display_string);
         x += col_width;
         
@@ -180,12 +183,16 @@ static void draw_data_row(int y, DSVViewer *viewer, size_t file_line, size_t sta
         if (col == num_fields - 1 && x + SEPARATOR_WIDTH <= cols) {
             const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
             mvaddstr(y, x, final_separator);
+            // Don't add separator width to x for final separator - we want highlighting to stop before it
+        } else if (col < num_fields - 1) {
+            x += SEPARATOR_WIDTH;
         }
-        x += SEPARATOR_WIDTH;
     }
+    
+    return x; // Return the actual content width
 }
 
-void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
+void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t cursor_row, size_t cursor_col) {
     CHECK_NULL_RET_VOID(viewer);
     
     int rows, cols;
@@ -208,24 +215,53 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col) {
         move(screen_row, 0);
         clrtoeol();
         
-        size_t file_line = start_row + screen_row - (viewer->display_state->show_header ? 0 : screen_start_row);
+        // Calculate which data row we're displaying (0-based index, excluding header)
+        size_t data_row_index = start_row + screen_row - screen_start_row;
+        
+        // Calculate the actual file line to display
+        size_t file_line = data_row_index;
+        if (viewer->display_state->show_header) {
+            file_line++;  // Skip header line in file
+        }
+        
         if (file_line >= viewer->file_data->num_lines) {
             // Clear remaining lines if no more data
             continue;
         }
 
-        draw_data_row(screen_row, viewer, file_line, start_col, viewer->config);
+        int content_width = draw_data_row(screen_row, viewer, file_line, start_col, viewer->config);
+        
+        // Apply row highlighting if this is the cursor row
+        if (data_row_index == cursor_row) {
+            apply_row_highlight(screen_row, 0, content_width);
+        }
     }
     
     // Clear status line before updating
     move(rows - 1, 0);
     clrtoeol();
     
-    // Use %zu for size_t types
-    mvprintw(rows - 1, 0, "Lines %zu-%zu of %zu | Row: %zu | Col: %zu | q: quit | h: help",
-             start_row + 1,
-             (start_row + display_rows > viewer->file_data->num_lines) ? viewer->file_data->num_lines : start_row + display_rows,
-             viewer->file_data->num_lines, start_row + 1, start_col + 1);
+    // Updated status line to show cursor position
+    size_t display_cursor_row = cursor_row + 1;  // Convert to 1-based
+    if (viewer->display_state->show_header) {
+        display_cursor_row++;  // Account for header being row 1
+    }
+    
+    size_t first_visible = start_row + 1;
+    size_t last_visible = start_row + display_rows - (viewer->display_state->show_header ? 1 : 0);
+    if (viewer->display_state->show_header) {
+        first_visible++;  // Account for header being row 1
+        last_visible++;   // Account for header being row 1
+    }
+    if (last_visible > viewer->file_data->num_lines) {
+        last_visible = viewer->file_data->num_lines;
+    }
+    
+    mvprintw(rows - 1, 0, "Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu lines | q: quit | h: help",
+             display_cursor_row, cursor_col + 1,
+             first_visible,
+             last_visible,
+             viewer->file_data->num_lines);
     
     refresh();
 }
