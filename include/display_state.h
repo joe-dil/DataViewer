@@ -48,6 +48,8 @@ typedef struct {
     size_t num_cols;
     WorkBuffers buffers;
     int needs_redraw;
+    char copy_status[256];
+    int show_copy_status;
 } DisplayState;
 
 #endif // DISPLAY_STATE_H 

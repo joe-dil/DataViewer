@@ -3,6 +3,99 @@
 #include "viewer.h"
 #include <ncurses.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Forward declarations for copy functionality
+static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cursor_col);
+static void copy_to_clipboard_with_status(DSVViewer *viewer, const char *text);
+
+// Helper function to get the field value at the current cursor position
+static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cursor_col) {
+    if (!viewer || !viewer->file_data || !viewer->file_data->data) {
+        return NULL;
+    }
+    
+    // Calculate actual file line (accounting for header)
+    size_t file_line = cursor_row;
+    if (viewer->display_state->show_header) {
+        file_line++; // Skip header line in file
+    }
+    
+    // Check bounds
+    if (file_line >= viewer->file_data->num_lines) {
+        return NULL;
+    }
+    
+    // Parse the line to get fields
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[file_line], 
+                                  viewer->file_data->fields, viewer->config->max_cols);
+    
+    // Check if cursor_col is within bounds
+    if (cursor_col >= num_fields) {
+        return NULL;
+    }
+    
+    // Render the field to a static buffer
+    static char field_buffer[DEFAULT_MAX_FIELD_LEN];
+    render_field(&viewer->file_data->fields[cursor_col], field_buffer, sizeof(field_buffer));
+    
+    return field_buffer;
+}
+
+// Copy text to clipboard and update status - enhanced version
+static void copy_to_clipboard_with_status(DSVViewer *viewer, const char *text) {
+    if (!text || !viewer || !viewer->display_state) return;
+    
+    const char *cmd = NULL;
+    
+    #ifdef __APPLE__
+        cmd = "pbcopy";
+    #elif __linux__
+        // Try xclip first, fall back to xsel
+        if (system("which xclip > /dev/null 2>&1") == 0) {
+            cmd = "xclip -selection clipboard";
+        } else if (system("which xsel > /dev/null 2>&1") == 0) {
+            cmd = "xsel --clipboard --input";
+        }
+    #endif
+    
+    if (!cmd) {
+        // No clipboard command available
+        snprintf(viewer->display_state->copy_status, sizeof(viewer->display_state->copy_status),
+                 "Clipboard not available on this system");
+        viewer->display_state->show_copy_status = 1;
+        return;
+    }
+    
+    FILE *pipe = popen(cmd, "w");
+    if (!pipe) {
+        snprintf(viewer->display_state->copy_status, sizeof(viewer->display_state->copy_status),
+                 "Failed to access clipboard");
+        viewer->display_state->show_copy_status = 1;
+        return;
+    }
+    
+    fprintf(pipe, "%s", text);
+    int result = pclose(pipe);
+    
+    if (result == 0) {
+        // Success - show what was copied (truncated if too long)
+        if (strlen(text) > 50) {
+            snprintf(viewer->display_state->copy_status, sizeof(viewer->display_state->copy_status),
+                     "Copied: %.47s...", text);
+        } else {
+            snprintf(viewer->display_state->copy_status, sizeof(viewer->display_state->copy_status),
+                     "Copied: %s", text);
+        }
+    } else {
+        snprintf(viewer->display_state->copy_status, sizeof(viewer->display_state->copy_status),
+                 "Copy failed");
+    }
+    
+    viewer->display_state->show_copy_status = 1;
+}
 
 // Helper function to check if a column is fully visible in the current viewport
 static bool is_column_fully_visible(DSVViewer *viewer, size_t start_col, size_t target_col, int screen_width) {
@@ -204,6 +297,21 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             if (viewer->display_state->num_cols > 0) {
                 state->table_view.table_start_col = find_start_col_for_target(
                     viewer, state->table_view.cursor_col, cols);
+            }
+            break;
+            
+        case 'y':  // Copy current cell to clipboard
+            {
+                // Get the field value at cursor position
+                char *field_value = get_field_at_cursor(viewer, 
+                                                       state->table_view.cursor_row, 
+                                                       state->table_view.cursor_col);
+                if (field_value) {
+                    copy_to_clipboard_with_status(viewer, field_value);
+                    // Need to redraw to show the status message
+                    state->needs_redraw = true;
+                }
+                return INPUT_CONSUMED;
             }
             break;
             

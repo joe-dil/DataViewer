@@ -327,27 +327,37 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
     move(rows - 1, 0);
     clrtoeol();
     
-    // Updated status line to show cursor position
-    size_t display_cursor_row = cursor_row + 1;  // Convert to 1-based
-    if (viewer->display_state->show_header) {
-        display_cursor_row++;  // Account for header being row 1
+    // Check if we should show copy status message
+    if (viewer->display_state->show_copy_status) {
+        // Show copy status message
+        mvprintw(rows - 1, 0, "%s", viewer->display_state->copy_status);
+        
+        // Clear the flag after showing (it will be shown once)
+        viewer->display_state->show_copy_status = 0;
+    } else {
+        // Show normal status line
+        // Updated status line to show cursor position
+        size_t display_cursor_row = cursor_row + 1;  // Convert to 1-based
+        if (viewer->display_state->show_header) {
+            display_cursor_row++;  // Account for header being row 1
+        }
+        
+        size_t first_visible = start_row + 1;
+        size_t last_visible = start_row + display_rows - (viewer->display_state->show_header ? 1 : 0);
+        if (viewer->display_state->show_header) {
+            first_visible++;  // Account for header being row 1
+            last_visible++;   // Account for header being row 1
+        }
+        if (last_visible > viewer->file_data->num_lines) {
+            last_visible = viewer->file_data->num_lines;
+        }
+        
+        mvprintw(rows - 1, 0, "Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu lines | q: quit | h: help",
+                 display_cursor_row, cursor_col + 1,
+                 first_visible,
+                 last_visible,
+                 viewer->file_data->num_lines);
     }
-    
-    size_t first_visible = start_row + 1;
-    size_t last_visible = start_row + display_rows - (viewer->display_state->show_header ? 1 : 0);
-    if (viewer->display_state->show_header) {
-        first_visible++;  // Account for header being row 1
-        last_visible++;   // Account for header being row 1
-    }
-    if (last_visible > viewer->file_data->num_lines) {
-        last_visible = viewer->file_data->num_lines;
-    }
-    
-    mvprintw(rows - 1, 0, "Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu lines | q: quit | h: help",
-             display_cursor_row, cursor_col + 1,
-             first_visible,
-             last_visible,
-             viewer->file_data->num_lines);
     
     refresh();
 }
@@ -364,6 +374,7 @@ void show_help(void) {
     mvprintw(HELP_COMMANDS_ROW, HELP_INDENT_COL, "Commands:");
     mvprintw(11, HELP_ITEM_INDENT_COL, "q             - Quit");
     mvprintw(12, HELP_ITEM_INDENT_COL, "h             - Show this help");
+    mvprintw(13, HELP_ITEM_INDENT_COL, "y             - Copy current cell to clipboard");
     mvprintw(HELP_FEATURES_ROW, HELP_INDENT_COL, "Features:");
     mvprintw(15, HELP_ITEM_INDENT_COL, "- Fast loading of large files (memory mapped)");
     mvprintw(16, HELP_ITEM_INDENT_COL, "- Auto-detection of delimiters (, | ; tab)");
