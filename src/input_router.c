@@ -200,6 +200,12 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
     if (viewer->display_state->show_header) {
         visible_rows--;
     }
+    
+    // Calculate the actual number of data rows (excluding header if present)
+    size_t data_rows = viewer->file_data->num_lines;
+    if (viewer->display_state->show_header && viewer->file_data->num_lines > 0) {
+        data_rows--; // Subtract header row from total lines
+    }
 
     switch (ch) {
         case KEY_UP:
@@ -213,7 +219,8 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             break;
             
         case KEY_DOWN:
-            if (state->table_view.cursor_row + 1 < viewer->file_data->num_lines) {
+            // Use data_rows for boundary check
+            if (state->table_view.cursor_row + 1 < data_rows) {
                 state->table_view.cursor_row++;
                 // Scroll down if cursor moves below viewport
                 if (state->table_view.cursor_row >= state->table_view.table_start_row + visible_rows) {
@@ -263,13 +270,18 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case KEY_NPAGE:
             // Move viewport down by one page
             state->table_view.table_start_row += visible_rows;
-            if (state->table_view.table_start_row >= viewer->file_data->num_lines) {
-                state->table_view.table_start_row = (viewer->file_data->num_lines > (size_t)visible_rows) 
-                    ? viewer->file_data->num_lines - visible_rows : 0;
+            // Use data_rows for boundary check
+            if (state->table_view.table_start_row >= data_rows) {
+                state->table_view.table_start_row = (data_rows > (size_t)visible_rows) 
+                    ? data_rows - visible_rows : 0;
             }
             // Move cursor to stay visible
             if (state->table_view.cursor_row < state->table_view.table_start_row) {
                 state->table_view.cursor_row = state->table_view.table_start_row;
+            }
+            // Ensure cursor doesn't go past the last data row
+            if (state->table_view.cursor_row >= data_rows && data_rows > 0) {
+                state->table_view.cursor_row = data_rows - 1;
             }
             break;
             
@@ -281,14 +293,14 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             break;
             
         case KEY_END:
-            state->table_view.cursor_row = (viewer->file_data->num_lines > 0) 
-                ? viewer->file_data->num_lines - 1 : 0;
+            // Use data_rows for setting cursor to last row
+            state->table_view.cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
             state->table_view.cursor_col = (viewer->display_state->num_cols > 0)
                 ? viewer->display_state->num_cols - 1 : 0;
             
             // Scroll viewport to show the cursor at the end
-            if (viewer->file_data->num_lines > (size_t)visible_rows) {
-                state->table_view.table_start_row = viewer->file_data->num_lines - visible_rows;
+            if (data_rows > (size_t)visible_rows) {
+                state->table_view.table_start_row = data_rows - visible_rows;
             } else {
                 state->table_view.table_start_row = 0;
             }
