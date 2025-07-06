@@ -83,9 +83,9 @@ static void render_header_background(int y, int underline_width) {
 }
 
 // Phase 4: Render actual header column content
-static void render_header_columns(DSVViewer *viewer, int y, size_t start_col, int cols, const HeaderLayout *layout) {
-    CHECK_NULL_RET_VOID(viewer);
-    CHECK_NULL_RET_VOID(layout);
+static int render_header_columns(DSVViewer *viewer, int y, size_t start_col, int cols, const HeaderLayout *layout) {
+    CHECK_NULL_RET(viewer, 0);
+    CHECK_NULL_RET(layout, 0);
     
     int x = 0;
     for (size_t col = start_col; col < layout->num_fields; col++) {
@@ -126,24 +126,31 @@ static void render_header_columns(DSVViewer *viewer, int y, size_t start_col, in
         // Add separator if not truncated and not last column
         if (col < layout->num_fields - 1 && x + SEPARATOR_WIDTH <= cols && col_width == original_col_width) {
             mvaddstr(y, x, viewer->display_state->separator);
+            x += SEPARATOR_WIDTH;
         }
         // Add final column separator if this is the last column
         else if (col == layout->num_fields - 1 && x + SEPARATOR_WIDTH <= cols && col_width == original_col_width) {
             const char* final_separator = viewer->display_state->supports_unicode ? "║" : ASCII_SEPARATOR;
             mvaddstr(y, x, final_separator);
+            x += SEPARATOR_WIDTH;
         }
-        x += SEPARATOR_WIDTH;
+        // Only add separator width for non-truncated, non-last columns where we didn't draw a separator yet
+        else if (col < layout->num_fields - 1 && col_width == original_col_width) {
+            x += SEPARATOR_WIDTH;
+        }
         
         if (col_width != original_col_width && x >= cols) {
             break;
         }
     }
+    
+    return x; // Return the actual content width
 }
 
 // Phase 4: Main header drawing function - now much simpler
-static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
-    CHECK_NULL_RET_VOID(viewer);
-    CHECK_NULL_RET_VOID(config);
+static int draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
+    CHECK_NULL_RET(viewer, 0);
+    CHECK_NULL_RET(config, 0);
     
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -152,7 +159,9 @@ static void draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DS
     HeaderLayout layout;
     calculate_header_layout(viewer, start_col, cols, &layout);
     render_header_background(y, layout.underline_width);
-    render_header_columns(viewer, y, start_col, cols, &layout);
+    int content_width = render_header_columns(viewer, y, start_col, cols, &layout);
+    
+    return content_width; // Return the actual header content width
 }
 
 // Calculate screen position and width for a given column
@@ -163,34 +172,52 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
         return false;  // Column is scrolled off to the left
     }
     
+    // Parse the header to get the actual number of fields
+    size_t num_fields = parse_line(viewer, viewer->file_data->line_offsets[0], 
+                                  viewer->file_data->fields, viewer->config->max_cols);
+    
     int x = 0;
-    for (size_t col = start_col; col <= target_col; col++) {
+    for (size_t col = start_col; col <= target_col && col < num_fields; col++) {
+        if (x >= screen_width) {
+            return false;  // Already past screen edge
+        }
+        
         int col_width = get_column_width(viewer, col);
+        int original_col_width = col_width;
+        
+        // Apply same truncation logic as render_header_columns
+        int separator_space = (col < num_fields - 1) ? SEPARATOR_WIDTH : 0;
+        int needed_space = col_width + separator_space;
+        if (x + needed_space > screen_width) {
+            col_width = screen_width - x;
+            if (col_width <= 0) {
+                return false;
+            }
+        }
         
         if (col == target_col) {
             // This is our target column
-            if (x >= screen_width) {
-                return false;  // Column is off screen to the right
-            }
-            
-            // Check if column fits on screen
-            if (x + col_width > screen_width) {
-                col_width = screen_width - x;  // Truncate to fit
-            }
-            
             *out_x = x;
             *out_width = col_width;
             return true;
         }
         
-        // Not target column yet, advance position
+        // Advance position using same logic as render_header_columns
         x += col_width;
-        if (col < viewer->display_state->num_cols - 1) {
+        
+        // Add separator width using exact same conditions as render_header_columns
+        if (col < num_fields - 1 && x + SEPARATOR_WIDTH <= screen_width && col_width == original_col_width) {
+            x += SEPARATOR_WIDTH;
+        }
+        else if (col == num_fields - 1 && x + SEPARATOR_WIDTH <= screen_width && col_width == original_col_width) {
+            x += SEPARATOR_WIDTH;
+        }
+        else if (col < num_fields - 1 && col_width == original_col_width) {
             x += SEPARATOR_WIDTH;
         }
         
-        if (x >= screen_width) {
-            return false;  // Went off screen before reaching target
+        if (col_width != original_col_width && x >= screen_width) {
+            return false;
         }
     }
     
@@ -285,7 +312,7 @@ void display_data(DSVViewer *viewer, size_t start_row, size_t start_col, size_t 
     if (get_column_screen_position(viewer, start_col, cursor_col, cols, &col_x, &col_width)) {
         // Column is visible
         if (viewer->display_state->show_header) {
-            // Apply special highlighting to header column
+            // Apply special highlighting to header column that preserves underline
             apply_header_column_highlight(col_x, col_width);
             
             // Apply regular highlighting to data rows
