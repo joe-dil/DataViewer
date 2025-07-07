@@ -362,6 +362,37 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     
+    // CRITICAL FIX: Adjust viewport if cursor is not visible
+    // This should happen BEFORE we start drawing
+    int cursor_x, cursor_width;
+    bool cursor_visible = get_column_screen_position(viewer, state, start_col, cursor_col, cols, &cursor_x, &cursor_width);
+    
+    if (!cursor_visible) {
+        // Cursor column is not visible with current start_col
+        if (cursor_col < start_col) {
+            // Cursor is to the left of viewport
+            ((ViewState*)state)->table_view.table_start_col = cursor_col;
+            start_col = cursor_col;
+        } else {
+            // Cursor is to the right of viewport
+            // Check if scrolling by 1 would make it visible
+            size_t new_start = start_col + 1;
+            if (get_column_screen_position(viewer, state, new_start, cursor_col, cols, &cursor_x, &cursor_width)) {
+                // Scrolling by 1 is enough
+                ((ViewState*)state)->table_view.table_start_col = new_start;
+                start_col = new_start;
+            } else {
+                // Need to scroll more - find the minimum that works
+                // Allow new_start to go up to cursor_col (inclusive) to handle last column
+                while (new_start <= cursor_col && !get_column_screen_position(viewer, state, new_start, cursor_col, cols, &cursor_x, &cursor_width)) {
+                    new_start++;
+                }
+                ((ViewState*)state)->table_view.table_start_col = new_start;
+                start_col = new_start;
+            }
+        }
+    }
+    
     // ANTI-FLICKER FIX: Replace clear() with line-by-line clearing
     // Only clear lines that will be used to avoid full screen flash
     int display_rows = rows - 1;

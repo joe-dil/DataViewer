@@ -52,16 +52,6 @@ void navigate_right(ViewState *state, const struct DSVViewer *viewer) {
 
     if (state->table_view.cursor_col + 1 < col_count) {
         state->table_view.cursor_col++;
-        
-        // Super simple: if we have a reasonable number of columns visible (say 5),
-        // and cursor goes beyond that, start scrolling
-        // This avoids complex width calculations while providing smooth scrolling
-        size_t visible_cols = 5; // Reasonable guess for most terminals
-        
-        if (state->table_view.cursor_col >= state->table_view.table_start_col + visible_cols) {
-            // Scroll right to keep cursor in view
-            state->table_view.table_start_col = state->table_view.cursor_col - visible_cols + 1;
-        }
     }
 }
 
