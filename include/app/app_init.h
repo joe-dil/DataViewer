@@ -9,6 +9,7 @@
 #include "config.h"
 #include "buffer_pool.h"
 #include "view_manager.h"
+#include "view_state.h"
 
 // Forward declarations for cache components
 struct DisplayCache;
@@ -33,6 +34,7 @@ typedef struct DSVViewer {
     struct ErrorContext *error_context;
     BufferPool *buffer_pool;
     ViewManager *view_manager;
+    ViewState view_state;
 } DSVViewer;
 
 // Core application function declarations

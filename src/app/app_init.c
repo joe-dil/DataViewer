@@ -188,6 +188,7 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     phase_time = get_time_ms();
     res = init_viewer_components(viewer, config);
     if (res != DSV_OK) return res;
+    init_view_state(&viewer->view_state); // Initialize the global view state
     printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
 
     // File operations
@@ -219,4 +220,5 @@ void init_view_state(ViewState *state) {
     state->table_view.row_selected = NULL;
     state->table_view.selection_count = 0;
     state->table_view.total_rows = 0;
+    state->current_view = NULL;
 } 

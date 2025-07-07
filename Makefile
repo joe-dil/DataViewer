@@ -16,7 +16,7 @@ SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
 DEPDIR = deps
-TARGET = $(BINDIR)/dv
+TARGET = bin/dv
 
 # Source files discovery
 ALL_SOURCES   = $(shell find $(SRCDIR) -name '*.c')
@@ -31,7 +31,7 @@ DEPENDENCIES  = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(ALL_SOURCES))
 .PHONY: all clean test valgrind release debug
 
 # Default target is release build
-all: release
+all: $(TARGET)
 
 # Release build (optimized)
 release: CFLAGS = $(CFLAGS_RELEASE)
@@ -42,6 +42,7 @@ debug: CFLAGS = $(CFLAGS_DEBUG)
 debug: LIBS += -fsanitize=address
 debug: $(TARGET)
 
+# Main application binary
 $(TARGET): $(MAIN_OBJECT) $(LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $(TARGET) $(LIBS)
@@ -55,7 +56,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 -include $(DEPENDENCIES)
 
 clean:
-	@rm -rf $(OBJDIR) $(BINDIR) $(DEPDIR)
+	@rm -rf $(OBJDIR) $(TARGET) $(DEPDIR)
 
 test:
 	@echo "Running tests..."

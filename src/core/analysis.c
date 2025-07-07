@@ -94,6 +94,12 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
 
 // --- Frequency Analysis ---
 
+// Represents a single unique value and its frequency count, used for sorting internally.
+typedef struct {
+    const char *value;
+    int count;
+} FreqValueCount;
+
 #define INITIAL_FREQ_TABLE_SIZE 1024
 
 // An entry in the frequency analysis hash table (internal to this C file)
@@ -187,7 +193,7 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
 }
 
 
-FreqAnalysisResult* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index) {
+InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index) {
     if (!viewer || !view || column_index < 0 || column_index >= (int)viewer->display_state->num_cols) {
         return NULL;
     }
@@ -232,59 +238,68 @@ FreqAnalysisResult* perform_frequency_analysis(struct DSVViewer *viewer, const s
         return NULL; // No data to analyze
     }
 
-    // Convert hash table to array for sorting
-    FreqAnalysisResult *result = calloc(1, sizeof(FreqAnalysisResult));
-    if (!result) {
-        hash_table_destroy(table); // Need to free table entries too
+    // Convert hash table to a sorted array first
+    FreqValueCount *sorted_items = malloc(table->item_count * sizeof(FreqValueCount));
+    if (!sorted_items) {
+        hash_table_destroy(table);
         return NULL;
     }
-
-    result->items = malloc(table->item_count * sizeof(FreqValueCount));
-    if (!result->items) {
-        free(result);
-        hash_table_destroy(table); // Need to free table entries too
-        return NULL;
-    }
-    result->count = table->item_count;
-    result->capacity = table->item_count;
 
     int current_item = 0;
     for (int i = 0; i < table->size; i++) {
         FreqAnalysisEntry *entry = table->buckets[i];
         while (entry) {
-            result->items[current_item].value = entry->value;
-            result->items[current_item].count = entry->count;
+            sorted_items[current_item].value = entry->value;
+            sorted_items[current_item].count = entry->count;
             current_item++;
             
             FreqAnalysisEntry *to_free = entry;
             entry = entry->next;
-            free(to_free); // Free the entry now that we've copied it
+            free(to_free); // Free the hash table entry now that we've copied it
         }
     }
+
+    // Sort the results by count
+    qsort(sorted_items, table->item_count, sizeof(FreqValueCount), compare_freq_counts);
     
     // Get column name
     char col_name_buffer[256];
+    char table_title_buffer[512];
     get_column_name(viewer, column_index, col_name_buffer, sizeof(col_name_buffer));
-    result->column_name = strdup(col_name_buffer);
+    snprintf(table_title_buffer, sizeof(table_title_buffer), "Frequency Analysis: %s", col_name_buffer);
 
+    // Now, create the InMemoryTable
+    const char *headers[] = {"Value", "Count"};
+    InMemoryTable *result_table = create_in_memory_table(table_title_buffer, 2, headers);
+    if (!result_table) {
+        free(sorted_items);
+        hash_table_destroy(table);
+        return NULL;
+    }
+
+    // Populate the InMemoryTable from the sorted array
+    for (int i = 0; i < table->item_count; i++) {
+        char count_str[32];
+        snprintf(count_str, sizeof(count_str), "%d", sorted_items[i].count);
+        const char *row_data[] = {sorted_items[i].value, count_str};
+        if (add_in_memory_table_row(result_table, row_data) != 0) {
+            // Handle error, free everything
+            free(sorted_items);
+            free_in_memory_table(result_table);
+            hash_table_destroy(table);
+            return NULL;
+        }
+    }
+
+    free(sorted_items);
     hash_table_destroy(table);
 
-    // Sort the results
-    qsort(result->items, result->count, sizeof(FreqValueCount), compare_freq_counts);
-
-    return result;
+    return result_table;
 }
 
-void free_frequency_analysis_result(FreqAnalysisResult *result) {
-    if (!result) return;
-    // Note: The 'value' strings are managed by the string interning system,
-    // so we do not free them here.
-    free(result->items);
-    free(result->column_name);
-    free(result);
-}
+// --- Comparison Functions ---
 
-// Comparison function for qsort to sort by count descending
+// qsort comparison function for sorting frequency counts in descending order
 static int compare_freq_counts(const void *a, const void *b) {
     const FreqValueCount *itemA = (const FreqValueCount *)a;
     const FreqValueCount *itemB = (const FreqValueCount *)b;

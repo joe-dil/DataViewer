@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "memory/in_memory_table.h"
 
 // Forward declarations for copy functionality
 static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cursor_col);
@@ -148,22 +149,27 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case KEY_END:
             navigate_end(state, viewer);
             break;
-        case 'F': // Shift+F. ncurses doesn't have a constant for this.
-            {
-                FreqAnalysisResult* result = perform_frequency_analysis(viewer, viewer->view_manager->current, state->table_view.cursor_col);
-                if (result) {
-                    // Cleanup old results if any
-                    if (state->freq_analysis_view.result) {
-                        free_frequency_analysis_result(state->freq_analysis_view.result);
+        case 'F': // Shift+F.
+            if (state->current_view) {
+                // Perform analysis to get the data table
+                InMemoryTable* table = perform_frequency_analysis(viewer, state->current_view, state->table_view.cursor_col);
+                if (table) {
+                    // If there's an old table, free it first
+                    if (state->data_view.table) {
+                        free_in_memory_table(state->data_view.table);
                     }
-                    state->freq_analysis_view.result = result;
-                    state->freq_analysis_view.scroll_top = 0;
-                    state->current_panel = PANEL_FREQ_ANALYSIS;
+                    // Store the new table in the state
+                    state->data_view.table = table;
+                    state->data_view.cursor_row = 0;
+                    state->data_view.scroll_top = 0;
+                    
+                    // Switch to the new panel
+                    state->current_panel = PANEL_DATA_VIEW;
                     state->needs_redraw = true;
                 }
-                // Potentially add an error message to status bar if result is NULL
-                return INPUT_CONSUMED;
+                // Optional: Add a status message if analysis fails
             }
+            return INPUT_CONSUMED;
         case ' ':
             toggle_row_selection(state, state->table_view.cursor_row);
             state->needs_redraw = true;
@@ -181,7 +187,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 size_t *rows = NULL;
                 size_t count = get_selected_rows(state, &rows);
                 if (count > 0) {
-                    create_view_from_selection(viewer->view_manager, rows, count);
+                    create_view_from_selection(viewer->view_manager, state, rows, count);
                     // The create function copies the rows, so we must free them here.
                     free(rows);
                     // Per instructions, clear selection after creating a view
@@ -191,20 +197,20 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             }
             return INPUT_CONSUMED;
         case '\t': // Tab
-            switch_to_next_view(viewer->view_manager);
+            switch_to_next_view(viewer->view_manager, state);
             state->needs_redraw = true;
             return INPUT_CONSUMED;
         case KEY_BTAB: // Shift+Tab
-            switch_to_prev_view(viewer->view_manager);
+            switch_to_prev_view(viewer->view_manager, state);
             state->needs_redraw = true;
             return INPUT_CONSUMED;
         case 'x':
             if (viewer->view_manager->view_count > 1) {
-                close_current_view(viewer->view_manager);
+                close_current_view(viewer->view_manager, state);
                 // The state pointer is now invalid, but we are just setting a flag
                 // on the new current view. The state is fetched again at the
                 // start of the loop in app_loop.c
-                viewer->view_manager->current->state.needs_redraw = true;
+                state->needs_redraw = true;
             }
             return INPUT_CONSUMED;
         case 'y':  // Copy current cell to clipboard
@@ -242,23 +248,23 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
 
 // --- Input Handlers per Panel ---
 
-static InputResult handle_freq_analysis_input(int ch, ViewState *state) {
-    if (!state || !state->freq_analysis_view.result) {
+static InputResult handle_data_view_input(int ch, ViewState *state) {
+    if (!state || !state->data_view.table) {
         return INPUT_IGNORED;
     }
 
-    size_t old_scroll = state->freq_analysis_view.scroll_top;
-    size_t max_scroll = state->freq_analysis_view.result->count > 0 ? state->freq_analysis_view.result->count - 1 : 0;
+    size_t old_scroll = state->data_view.scroll_top;
+    size_t max_scroll = state->data_view.table->row_count > 0 ? state->data_view.table->row_count - 1 : 0;
 
     switch (ch) {
         case KEY_UP:
-            if (state->freq_analysis_view.scroll_top > 0) {
-                state->freq_analysis_view.scroll_top--;
+            if (state->data_view.scroll_top > 0) {
+                state->data_view.scroll_top--;
             }
             break;
         case KEY_DOWN:
-            if (state->freq_analysis_view.scroll_top < max_scroll) {
-                state->freq_analysis_view.scroll_top++;
+            if (state->data_view.scroll_top < max_scroll) {
+                state->data_view.scroll_top++;
             }
             break;
         case KEY_PPAGE:
@@ -267,7 +273,7 @@ static InputResult handle_freq_analysis_input(int ch, ViewState *state) {
                 getmaxyx(stdscr, rows, cols); (void)cols;
                 int page_size = rows - 5; // minus header/footer
                 if (page_size < 1) page_size = 1;
-                state->freq_analysis_view.scroll_top = state->freq_analysis_view.scroll_top > (size_t)page_size ? state->freq_analysis_view.scroll_top - page_size : 0;
+                state->data_view.scroll_top = state->data_view.scroll_top > (size_t)page_size ? state->data_view.scroll_top - page_size : 0;
             }
             break;
         case KEY_NPAGE:
@@ -276,17 +282,17 @@ static InputResult handle_freq_analysis_input(int ch, ViewState *state) {
                 getmaxyx(stdscr, rows, cols); (void)cols;
                 int page_size = rows - 5; // minus header/footer
                 if (page_size < 1) page_size = 1;
-                state->freq_analysis_view.scroll_top += page_size;
-                if (state->freq_analysis_view.scroll_top > max_scroll) {
-                    state->freq_analysis_view.scroll_top = max_scroll;
+                state->data_view.scroll_top += page_size;
+                if (state->data_view.scroll_top > max_scroll) {
+                    state->data_view.scroll_top = max_scroll;
                 }
             }
             break;
         case 'q':
         case 27: // ESC
-            // Free results and switch back to table view
-            free_frequency_analysis_result(state->freq_analysis_view.result);
-            state->freq_analysis_view.result = NULL;
+            // Free table and switch back to table view
+            free_in_memory_table(state->data_view.table);
+            state->data_view.table = NULL;
             state->current_panel = PANEL_TABLE_VIEW;
             state->needs_redraw = true;
             return INPUT_CONSUMED;
@@ -294,7 +300,7 @@ static InputResult handle_freq_analysis_input(int ch, ViewState *state) {
             return INPUT_IGNORED;
     }
 
-    if (state->freq_analysis_view.scroll_top != old_scroll) {
+    if (state->data_view.scroll_top != old_scroll) {
         state->needs_redraw = true;
     }
 
@@ -313,8 +319,15 @@ InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
         case PANEL_TABLE_VIEW:
             return handle_table_input(ch, viewer, state);
             
+        case PANEL_DATA_VIEW:
+            return handle_data_view_input(ch, state);
+            
         case PANEL_FREQ_ANALYSIS:
-            return handle_freq_analysis_input(ch, state);
+            // This panel is being deprecated and will be removed.
+            // For now, any input will just switch back to the table view.
+            state->current_panel = PANEL_TABLE_VIEW;
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
 
         case PANEL_HELP:
             // Help panel would handle its own input here

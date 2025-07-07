@@ -86,7 +86,7 @@ void navigate_down(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->view_manager->current->visible_row_count;
+    size_t data_rows = state->current_view->visible_row_count;
 
     if (state->table_view.cursor_row + 1 < data_rows) {
         state->table_view.cursor_row++;
@@ -150,7 +150,7 @@ void navigate_page_down(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->view_manager->current->visible_row_count;
+    size_t data_rows = state->current_view->visible_row_count;
 
     state->table_view.table_start_row += visible_rows;
     if (state->table_view.table_start_row >= data_rows) {
@@ -182,7 +182,7 @@ void navigate_end(ViewState *state, const struct DSVViewer *viewer) {
         visible_rows--;
     }
 
-    size_t data_rows = viewer->view_manager->current->visible_row_count;
+    size_t data_rows = state->current_view->visible_row_count;
 
     state->table_view.cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
     state->table_view.cursor_col = (viewer->display_state->num_cols > 0)

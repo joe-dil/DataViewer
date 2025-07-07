@@ -13,8 +13,8 @@
 
 #define COLOR_PAIR_SELECTED 2
 
-static size_t get_file_row(const DSVViewer *viewer, size_t display_row) {
-    View *current_view = viewer->view_manager->current;
+static size_t get_file_row(const ViewState *state, size_t display_row) {
+    View *current_view = state->current_view;
     if (!current_view || !current_view->visible_rows) {
         // This is the main view, rows map directly
         return display_row;
@@ -240,7 +240,7 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
 }
 
 static void display_table_view(DSVViewer *viewer, const ViewState *state);
-static void display_freq_analysis_panel(const ViewState *state);
+static void display_data_view(DSVViewer *viewer, const ViewState *state);
 static void display_help_panel(void);
 
 // Draw regular data row (keep simple, it works!)
@@ -248,7 +248,7 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(config, 0);
 
-    size_t file_line_unadjusted = get_file_row(viewer, display_row);
+    size_t file_line_unadjusted = get_file_row(state, display_row);
     if (file_line_unadjusted == (size_t)-1) {
         return 0; // Row is not visible in this view
     }
@@ -308,8 +308,12 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
         case PANEL_TABLE_VIEW:
             display_table_view(viewer, state);
             break;
+        case PANEL_DATA_VIEW:
+            display_data_view(viewer, state);
+            break;
         case PANEL_FREQ_ANALYSIS:
-            display_freq_analysis_panel(state);
+            // This panel is deprecated and will be replaced by the new data view panel.
+            // For now, it does nothing.
             break;
         case PANEL_HELP:
             display_help_panel();
@@ -320,7 +324,7 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
 }
 
 static void display_table_view(DSVViewer *viewer, const ViewState *state) {
-    View *current_view = viewer->view_manager->current;
+    View *current_view = state->current_view;
     size_t start_row = state->table_view.table_start_row;
     size_t start_col = state->table_view.table_start_col;
     size_t cursor_row = state->table_view.cursor_row;
@@ -390,7 +394,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
         // Clear the flag after showing (it will be shown once)
         viewer->display_state->show_copy_status = 0;
     } else {
-        View *current_view = viewer->view_manager->current;
+        View *current_view = state->current_view;
         size_t total_rows_in_view = current_view->visible_row_count;
         size_t display_cursor_row = cursor_row + 1;
 
@@ -411,43 +415,50 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     }
 }
 
-static void display_freq_analysis_panel(const ViewState *state) {
+static void display_data_view(DSVViewer *viewer, const ViewState *state) {
+    (void)viewer;
     clear();
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
-    FreqAnalysisResult *result = state->freq_analysis_view.result;
-    if (!result) {
-        mvprintw(0, 0, "Error: No analysis results available.");
+    InMemoryTable *table = state->data_view.table;
+    if (!table) {
+        mvprintw(0, 0, "Error: No data table available.");
         return;
     }
 
+    // --- Title ---
+    if (table->title) {
+        attron(A_BOLD | A_UNDERLINE);
+        mvprintw(0, 2, "%s", table->title);
+        attroff(A_BOLD | A_UNDERLINE);
+    }
+
     // --- Header ---
-    attron(A_BOLD | A_UNDERLINE);
-    mvprintw(0, 2, "Frequency Analysis: %s", result->column_name);
-    attroff(A_BOLD | A_UNDERLINE);
-    
-    mvprintw(2, 2, "Value");
-    mvprintw(2, cols / 2, "Count");
+    int x = 2;
+    for (size_t i = 0; i < table->col_count; i++) {
+        mvprintw(2, x, "%s", table->headers[i]);
+        x += (cols / table->col_count); // Simple column width for now
+    }
     mvhline(3, 0, ACS_HLINE, cols);
 
     // --- Content ---
-    int content_rows = rows - 4; // Header and footer lines
+    int content_rows = rows - 5; // Title, header, line, footer
     for (int i = 0; i < content_rows; i++) {
         int screen_row = i + 4;
-        size_t data_row = state->freq_analysis_view.scroll_top + i;
+        size_t data_row = state->data_view.scroll_top + i;
 
-        if (data_row >= (size_t)result->count) {
+        if (data_row >= table->row_count) {
             break;
         }
 
-        // Value Column
-        mvprintw(screen_row, 2, "%.*s", (cols / 2) - 3, result->items[data_row].value);
-
-        // Count Column
-        mvprintw(screen_row, cols / 2, "%d", result->items[data_row].count);
+        int col_x = 2;
+        for (size_t j = 0; j < table->col_count; j++) {
+            mvprintw(screen_row, col_x, "%.*s", (cols / (int)table->col_count) - 3, table->data[data_row][j]);
+            col_x += (cols / table->col_count);
+        }
     }
-    
+
     // --- Footer ---
     mvprintw(rows - 1, 2, "Press 'q' or 'Esc' to close. Use Arrow Keys to scroll.");
 }

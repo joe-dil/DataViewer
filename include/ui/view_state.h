@@ -4,9 +4,11 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "analysis.h"
+#include "memory/in_memory_table.h"
 
 // Forward declaration to avoid circular dependencies
 struct DSVViewer;
+struct View;
 
 // Input handling result - tells the main loop what to do next
 typedef enum {
@@ -18,6 +20,7 @@ typedef enum {
 // Panel types for future extensibility
 typedef enum {
     PANEL_TABLE_VIEW,
+    PANEL_DATA_VIEW,
     PANEL_HELP,
     PANEL_FREQ_ANALYSIS,
     // Future: PANEL_COLUMN_STATS, PANEL_ROW_DETAILS
@@ -27,6 +30,7 @@ typedef enum {
 typedef struct {
     PanelType current_panel;
     bool needs_redraw;
+    struct View *current_view; // The view whose data is being displayed
     
     // Panel-specific state
     struct {
@@ -39,12 +43,12 @@ typedef struct {
         size_t total_rows;         // Total rows in view (for bounds checking)
     } table_view;
 
-    // State for the Frequency Analysis Panel
     struct {
-        FreqAnalysisResult *result;
+        InMemoryTable *table;
+        size_t cursor_row;
         size_t scroll_top;
-    } freq_analysis_view;
-    
+    } data_view;
+
     // Future panel states can be added here
 } ViewState;
 

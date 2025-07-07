@@ -8,23 +8,24 @@
 #include <stdbool.h>
 
 void run_viewer(DSVViewer *viewer) {
-    // Create the initial state that will be moved into the main view
-    ViewState initial_state;
-    init_view_state(&initial_state);
-    init_row_selection(&initial_state, viewer->parsed_data->num_lines);
+    // The global viewer state is already initialized by init_viewer.
+    // We just need to set up the row selection for the main view.
+    init_row_selection(&viewer->view_state, viewer->parsed_data->num_lines);
 
-    // Create the main view from this state
-    View *main_view = create_main_view(&initial_state, viewer->parsed_data->num_lines);
+    // Create the main view, which represents the full dataset
+    View *main_view = create_main_view(viewer->parsed_data->num_lines);
     if (!main_view) {
         return; // Failed to create main view
     }
 
+    // Set the main view as the first and current view
     viewer->view_manager->views = main_view;
     viewer->view_manager->current = main_view;
     viewer->view_manager->view_count = 1;
 
     while (1) {
-        ViewState *current_state = &viewer->view_manager->current->state;
+        ViewState *current_state = &viewer->view_state;
+        current_state->current_view = viewer->view_manager->current;
 
         // Only redraw when needed
         if (current_state->needs_redraw) {

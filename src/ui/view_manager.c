@@ -18,46 +18,36 @@ void cleanup_view_manager(ViewManager *manager) {
     View *current = manager->views;
     while (current) {
         View *next = current->next;
-        if (current->state.freq_analysis_view.result) {
-            free_frequency_analysis_result(current->state.freq_analysis_view.result);
-        }
+        // State is now global, so no need to clean up freq results or selections here.
         free(current->visible_rows);
-        cleanup_row_selection(&current->state);
         free(current);
         current = next;
     }
     free(manager);
 }
 
-View* create_main_view(ViewState *initial_state, size_t total_rows) {
+View* create_main_view(size_t total_rows) {
     View *main_view = calloc(1, sizeof(View));
     if (!main_view) return NULL;
     
-    memcpy(&main_view->state, initial_state, sizeof(ViewState));
     snprintf(main_view->name, sizeof(main_view->name), "View 1 (Main)");
     main_view->visible_rows = NULL; // Main view shows all rows
     main_view->visible_row_count = total_rows;
-    main_view->state.table_view.total_rows = total_rows;
     
-    // The row selection state is part of the initial_state, so it should be "moved"
-    // rather than re-initialized, but let's make sure it's consistent.
-    // The bitmap is copied by memcpy, so we need to make sure the original
-    // initial_state doesn't free it.
-    initial_state->table_view.row_selected = NULL;
-
     return main_view;
 }
 
-void switch_to_next_view(ViewManager *manager) {
+void switch_to_next_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return; // Should not happen, but safe
     manager->current = manager->current->next;
     if (!manager->current) {
         manager->current = manager->views;
     }
+    reset_view_state_for_new_view(state, manager->current);
 }
 
-void switch_to_prev_view(ViewManager *manager) {
+void switch_to_prev_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return;
     
@@ -71,6 +61,7 @@ void switch_to_prev_view(ViewManager *manager) {
         }
         manager->current = tail;
     }
+    reset_view_state_for_new_view(state, manager->current);
 }
 
 static void renumber_views(ViewManager *manager) {
@@ -89,7 +80,7 @@ static void renumber_views(ViewManager *manager) {
     }
 }
 
-void close_current_view(ViewManager *manager) {
+void close_current_view(ViewManager *manager, ViewState *state) {
     if (!manager || !manager->current || manager->view_count <= 1) {
         // Cannot close the main view
         return;
@@ -113,18 +104,23 @@ void close_current_view(ViewManager *manager) {
     // If we closed the head of the list, update the manager's head pointer
     if (manager->views == view_to_close) {
         manager->views = view_to_close->next;
+        if (manager->views) {
+            manager->views->prev = NULL;
+        }
     }
 
     // Free resources
     free(view_to_close->visible_rows);
-    cleanup_row_selection(&view_to_close->state);
+    // Selections are not preserved per-view in this model, so no cleanup needed here.
     free(view_to_close);
 
     manager->view_count--;
     renumber_views(manager);
+    reset_view_state_for_new_view(state, manager->current);
 }
 
 View* create_view_from_selection(ViewManager *manager, 
+                               ViewState *state,
                                size_t *selected_rows, 
                                size_t count) {
     if (!manager || manager->view_count >= manager->max_views || !selected_rows || count == 0) {
@@ -144,24 +140,45 @@ View* create_view_from_selection(ViewManager *manager,
     memcpy(new_view->visible_rows, selected_rows, count * sizeof(size_t));
     new_view->visible_row_count = count;
 
-    // Initialize new view state
-    init_view_state(&new_view->state);
-    // This view has its own selection state, independent of the source
-    init_row_selection(&new_view->state, count);
-    new_view->state.table_view.total_rows = count;
-
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
     // Insert into doubly linked list
-    new_view->prev = manager->current;
-    new_view->next = manager->current->next;
-    if (manager->current->next) {
-        manager->current->next->prev = new_view;
+    if (manager->current) {
+        new_view->next = manager->current->next;
+        new_view->prev = manager->current;
+        if (manager->current->next) {
+            manager->current->next->prev = new_view;
+        }
+        manager->current->next = new_view;
+    } else {
+        // Should not happen if a main view exists, but handle defensively
+        manager->views = new_view;
     }
-    manager->current->next = new_view;
     
     manager->view_count++;
+
+    // Switch to the new view
     manager->current = new_view;
+    reset_view_state_for_new_view(state, manager->current);
 
     return new_view;
+}
+
+// When switching views, reset the UI state to sensible defaults for the new view's data.
+void reset_view_state_for_new_view(ViewState *state, View *new_view) {
+    if (!state || !new_view) return;
+
+    // Reset cursor and scroll positions
+    state->table_view.cursor_row = 0;
+    state->table_view.cursor_col = 0;
+    state->table_view.table_start_row = 0;
+    state->table_view.table_start_col = 0;
+
+    // Update total rows to reflect the new view
+    state->table_view.total_rows = new_view->visible_row_count;
+    
+    // Clear any existing selections
+    clear_all_selections(state);
+    
+    state->needs_redraw = true;
 } 
