@@ -19,6 +19,9 @@ void cleanup_view_manager(ViewManager *manager) {
     while (current) {
         View *next = current->next;
         // State is now global, so no need to clean up freq results or selections here.
+        if (current->data_source && current->owns_data_source) {
+            destroy_data_source(current->data_source);
+        }
         free(current->visible_rows);
         free(current);
         current = next;
@@ -26,11 +29,13 @@ void cleanup_view_manager(ViewManager *manager) {
     free(manager);
 }
 
-View* create_main_view(size_t total_rows) {
+View* create_main_view(size_t total_rows, DataSource *data_source) {
     View *main_view = calloc(1, sizeof(View));
     if (!main_view) return NULL;
     
-    snprintf(main_view->name, sizeof(main_view->name), "View 1 (Main)");
+    snprintf(main_view->name, sizeof(main_view->name), "Full Dataset");
+    main_view->data_source = data_source;
+    main_view->owns_data_source = false;  // Main view doesn't own file data source
     main_view->visible_rows = NULL; // Main view shows all rows
     main_view->visible_row_count = total_rows;
     
@@ -110,6 +115,9 @@ void close_current_view(ViewManager *manager, ViewState *state) {
     }
 
     // Free resources
+    if (view_to_close->data_source && view_to_close->owns_data_source) {
+        destroy_data_source(view_to_close->data_source);
+    }
     free(view_to_close->visible_rows);
     // Selections are not preserved per-view in this model, so no cleanup needed here.
     free(view_to_close);
@@ -122,7 +130,8 @@ void close_current_view(ViewManager *manager, ViewState *state) {
 View* create_view_from_selection(ViewManager *manager, 
                                ViewState *state,
                                size_t *selected_rows, 
-                               size_t count) {
+                               size_t count,
+                               DataSource *parent_data_source) {
     if (!manager || manager->view_count >= manager->max_views || !selected_rows || count == 0) {
         // Optionally, set an error message to display to the user
         return NULL;
@@ -139,6 +148,8 @@ View* create_view_from_selection(ViewManager *manager,
     }
     memcpy(new_view->visible_rows, selected_rows, count * sizeof(size_t));
     new_view->visible_row_count = count;
+    new_view->data_source = parent_data_source;
+    new_view->owns_data_source = false; // This view just filters the parent, doesn't own it.
 
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
@@ -181,4 +192,26 @@ void reset_view_state_for_new_view(ViewState *state, View *new_view) {
     clear_all_selections(state);
     
     state->needs_redraw = true;
+}
+
+bool add_view_to_manager(ViewManager *manager, View *view) {
+    if (!manager || !view || manager->view_count >= manager->max_views) {
+        return false;
+    }
+
+    // Insert into doubly linked list after current view
+    if (manager->current) {
+        view->next = manager->current->next;
+        view->prev = manager->current;
+        if (manager->current->next) {
+            manager->current->next->prev = view;
+        }
+        manager->current->next = view;
+    } else {
+        // This is the first view
+        manager->views = view;
+    }
+
+    manager->view_count++;
+    return true;
 } 

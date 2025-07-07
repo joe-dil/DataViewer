@@ -121,9 +121,10 @@ typedef struct {
 // Forward declaration for the comparison function
 static int compare_freq_counts(const void *a, const void *b);
 
-// Get the column name, either from the header or by generating one.
-static const char* get_column_name(struct DSVViewer *viewer, int column_index, char* buffer, size_t buffer_size) {
-    if (viewer && viewer->parsed_data && viewer->parsed_data->has_header && column_index < (int)viewer->parsed_data->num_header_fields) {
+// Helper to get column name, trying header first
+const char* get_column_name(struct DSVViewer *viewer, int column_index, char* buffer, size_t buffer_size) {
+    if (viewer->parsed_data && viewer->parsed_data->has_header && column_index < (int)viewer->parsed_data->num_header_fields) {
+        // Use the actual header name
         render_field(&viewer->parsed_data->header_fields[column_index], buffer, buffer_size);
         return buffer;
     } else {

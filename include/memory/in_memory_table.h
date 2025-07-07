@@ -10,7 +10,7 @@
  * any other application component. It stores a header, a 2D array of strings
  * for the data, and the dimensions of the table.
  */
-typedef struct {
+typedef struct InMemoryTable {
     char *title;          // Optional title for the data table.
     char **headers;       // Array of strings for column headers.
     char ***data;         // 2D array of strings for row data.

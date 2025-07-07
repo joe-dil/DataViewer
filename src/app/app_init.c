@@ -8,6 +8,7 @@
 #include "error_context.h"
 #include "buffer_pool.h"
 #include "view_manager.h"
+#include "core/data_source.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -76,6 +77,7 @@ static void cleanup_viewer_resources(struct DSVViewer *viewer) {
 void cleanup_viewer(DSVViewer *viewer) {
     if (!viewer) return;
 
+    destroy_data_source(viewer->main_data_source);
     cleanup_view_manager(viewer->view_manager);
     cleanup_file_data(viewer); // from file_io.h
     cleanup_cache_system(viewer); // from cache.h

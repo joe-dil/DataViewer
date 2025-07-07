@@ -149,25 +149,52 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case KEY_END:
             navigate_end(state, viewer);
             break;
-        case 'F': // Shift+F.
+        case 'F': // Shift+F
             if (state->current_view) {
-                // Perform analysis to get the data table
-                InMemoryTable* table = perform_frequency_analysis(viewer, state->current_view, state->table_view.cursor_col);
+                // Get current column name for view title
+                char col_name[256];
+                get_column_name(viewer, state->table_view.cursor_col, 
+                               col_name, sizeof(col_name));
+                
+                // Perform analysis
+                InMemoryTable* table = perform_frequency_analysis(viewer, 
+                                                                 state->current_view, 
+                                                                 state->table_view.cursor_col);
                 if (table) {
-                    // If there's an old table, free it first
-                    if (state->data_view.table) {
-                        free_in_memory_table(state->data_view.table);
+                    // Create data source for the table
+                    DataSource *ds = create_memory_data_source(table);
+                    if (!ds) {
+                        free_in_memory_table(table);
+                        return INPUT_CONSUMED;
                     }
-                    // Store the new table in the state
-                    state->data_view.table = table;
-                    state->data_view.cursor_row = 0;
-                    state->data_view.scroll_top = 0;
                     
-                    // Switch to the new panel
-                    state->current_panel = PANEL_DATA_VIEW;
+                    // Create new view
+                    View *freq_view = calloc(1, sizeof(View));
+                    if (!freq_view) {
+                        destroy_data_source(ds);
+                        return INPUT_CONSUMED;
+                    }
+                    
+                    snprintf(freq_view->name, sizeof(freq_view->name), 
+                             "Freq: %s", col_name);
+                    freq_view->data_source = ds;
+                    freq_view->owns_data_source = true;
+                    freq_view->visible_rows = NULL;
+                    freq_view->visible_row_count = ds->ops->get_row_count(ds->context);
+                    
+                    // Add to view manager
+                    if (!add_view_to_manager(viewer->view_manager, freq_view)) {
+                        free(freq_view);
+                        destroy_data_source(ds);
+                        return INPUT_CONSUMED;
+                    }
+                    
+                    // Switch to new view
+                    viewer->view_manager->current = freq_view;
+                    reset_view_state_for_new_view(state, freq_view);
+                    state->current_view = freq_view;
                     state->needs_redraw = true;
                 }
-                // Optional: Add a status message if analysis fails
             }
             return INPUT_CONSUMED;
         case ' ':
@@ -186,8 +213,8 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             if (state->table_view.selection_count > 0) {
                 size_t *rows = NULL;
                 size_t count = get_selected_rows(state, &rows);
-                if (count > 0) {
-                    create_view_from_selection(viewer->view_manager, state, rows, count);
+                if (count > 0 && state->current_view) {
+                    create_view_from_selection(viewer->view_manager, state, rows, count, state->current_view->data_source);
                     // The create function copies the rows, so we must free them here.
                     free(rows);
                     // Per instructions, clear selection after creating a view
@@ -248,65 +275,6 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
 
 // --- Input Handlers per Panel ---
 
-static InputResult handle_data_view_input(int ch, ViewState *state) {
-    if (!state || !state->data_view.table) {
-        return INPUT_IGNORED;
-    }
-
-    size_t old_scroll = state->data_view.scroll_top;
-    size_t max_scroll = state->data_view.table->row_count > 0 ? state->data_view.table->row_count - 1 : 0;
-
-    switch (ch) {
-        case KEY_UP:
-            if (state->data_view.scroll_top > 0) {
-                state->data_view.scroll_top--;
-            }
-            break;
-        case KEY_DOWN:
-            if (state->data_view.scroll_top < max_scroll) {
-                state->data_view.scroll_top++;
-            }
-            break;
-        case KEY_PPAGE:
-            {
-                int rows, cols;
-                getmaxyx(stdscr, rows, cols); (void)cols;
-                int page_size = rows - 5; // minus header/footer
-                if (page_size < 1) page_size = 1;
-                state->data_view.scroll_top = state->data_view.scroll_top > (size_t)page_size ? state->data_view.scroll_top - page_size : 0;
-            }
-            break;
-        case KEY_NPAGE:
-            {
-                int rows, cols;
-                getmaxyx(stdscr, rows, cols); (void)cols;
-                int page_size = rows - 5; // minus header/footer
-                if (page_size < 1) page_size = 1;
-                state->data_view.scroll_top += page_size;
-                if (state->data_view.scroll_top > max_scroll) {
-                    state->data_view.scroll_top = max_scroll;
-                }
-            }
-            break;
-        case 'q':
-        case 27: // ESC
-            // Free table and switch back to table view
-            free_in_memory_table(state->data_view.table);
-            state->data_view.table = NULL;
-            state->current_panel = PANEL_TABLE_VIEW;
-            state->needs_redraw = true;
-            return INPUT_CONSUMED;
-        default:
-            return INPUT_IGNORED;
-    }
-
-    if (state->data_view.scroll_top != old_scroll) {
-        state->needs_redraw = true;
-    }
-
-    return INPUT_CONSUMED;
-}
-
 InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
     // First, check for global commands
     GlobalResult global_result = handle_global_input(ch, state);
@@ -318,9 +286,6 @@ InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
     switch (state->current_panel) {
         case PANEL_TABLE_VIEW:
             return handle_table_input(ch, viewer, state);
-            
-        case PANEL_DATA_VIEW:
-            return handle_data_view_input(ch, state);
             
         case PANEL_FREQ_ANALYSIS:
             // This panel is being deprecated and will be removed.

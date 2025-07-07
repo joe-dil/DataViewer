@@ -57,4 +57,6 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
  */
 InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index);
 
+const char* get_column_name(struct DSVViewer *viewer, int column_index, char* buffer, size_t buffer_size);
+
 #endif // ANALYSIS_H 

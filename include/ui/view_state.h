@@ -20,7 +20,6 @@ typedef enum {
 // Panel types for future extensibility
 typedef enum {
     PANEL_TABLE_VIEW,
-    PANEL_DATA_VIEW,
     PANEL_HELP,
     PANEL_FREQ_ANALYSIS,
     // Future: PANEL_COLUMN_STATS, PANEL_ROW_DETAILS
@@ -42,12 +41,6 @@ typedef struct {
         size_t selection_count;    // Number of selected rows
         size_t total_rows;         // Total rows in view (for bounds checking)
     } table_view;
-
-    struct {
-        InMemoryTable *table;
-        size_t cursor_row;
-        size_t scroll_top;
-    } data_view;
 
     // Future panel states can be added here
 } ViewState;

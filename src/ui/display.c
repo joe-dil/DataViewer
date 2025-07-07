@@ -6,6 +6,7 @@
 #include "highlighting.h"
 #include "navigation.h"
 #include "analysis.h"
+#include "core/parser.h"
 #include <ncurses.h>
 #include <wchar.h>
 #include <string.h>
@@ -13,28 +14,9 @@
 
 #define COLOR_PAIR_SELECTED 2
 
-static size_t get_file_row(const ViewState *state, size_t display_row) {
-    View *current_view = state->current_view;
-    if (!current_view || !current_view->visible_rows) {
-        // This is the main view, rows map directly
-        return display_row;
-    }
-    if (display_row >= current_view->visible_row_count) {
-        return (size_t)-1; // Invalid row
-    }
-    return current_view->visible_rows[display_row];
-}
-
 // Simple helper: get column width with fallback
 static int get_column_width(DSVViewer *viewer, size_t col) {
     return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : DEFAULT_COL_WIDTH;
-}
-
-// Simple helper: render field content (common to both header and data)
-static const char* render_column_content(DSVViewer *viewer, size_t col, int display_width) {
-    char *rendered_field = viewer->display_state->buffers.render_buffer;
-    render_field(&viewer->parsed_data->fields[col], rendered_field, viewer->config->max_field_len);
-    return get_truncated_string(viewer, rendered_field, display_width);
 }
 
 // Simple helper: add separator if conditions are met
@@ -46,7 +28,7 @@ static void add_separator_if_needed(DSVViewer *viewer, int y, int x, size_t col,
 
 // Calculate which columns fit on screen and how to lay them out
 // Handles column width calculation, truncation, and overflow indicators
-static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int cols, HeaderLayout *layout) {
+static void calculate_header_layout(DSVViewer *viewer, ViewState *state, size_t start_col, int cols, HeaderLayout *layout) {
     CHECK_NULL_RET_VOID(viewer);
     CHECK_NULL_RET_VOID(layout);
     
@@ -54,7 +36,13 @@ static void calculate_header_layout(DSVViewer *viewer, size_t start_col, int col
     layout->last_visible_col = start_col;
     layout->has_more_columns_right = false;
     
-    layout->num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[0], viewer->parsed_data->fields, viewer->config->max_cols);
+    if (state->current_view && state->current_view->data_source) {
+        DataSource *ds = state->current_view->data_source;
+        layout->num_fields = ds->ops->get_col_count(ds->context);
+    } else {
+        layout->num_fields = 0;
+    }
+
     bool broke_early = false;
     
     // Try to fit as many columns as possible within screen width
@@ -99,7 +87,7 @@ static void render_header_background(int y, int underline_width) {
 }
 
 // Phase 4: Render actual header column content
-static int render_header_columns(DSVViewer *viewer, int y, size_t start_col, int cols, const HeaderLayout *layout) {
+static int render_header_columns(DSVViewer *viewer, const ViewState* state, int y, size_t start_col, int cols, const HeaderLayout *layout) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(layout, 0);
     
@@ -118,7 +106,14 @@ static int render_header_columns(DSVViewer *viewer, int y, size_t start_col, int
             if (col_width <= 0) break;
         }
         
-        const char *display_string = render_column_content(viewer, col, col_width);
+        char header_buffer[DEFAULT_MAX_FIELD_LEN];
+        if (state->current_view && state->current_view->data_source) {
+            DataSource *ds = state->current_view->data_source;
+            ds->ops->get_header(ds->context, col, header_buffer, sizeof(header_buffer));
+        } else {
+            header_buffer[0] = '\0';
+        }
+        const char *display_string = get_truncated_string(viewer, header_buffer, col_width);
         
         // Simplified padding logic for headers
         if (col_width < original_col_width) {
@@ -164,7 +159,7 @@ static int render_header_columns(DSVViewer *viewer, int y, size_t start_col, int
 }
 
 // Phase 4: Main header drawing function - now much simpler
-static int draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSVConfig *config) {
+static int draw_header_row(int y, DSVViewer *viewer, const ViewState *state, size_t start_col, const DSVConfig *config) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(config, 0);
     
@@ -173,23 +168,27 @@ static int draw_header_row(int y, DSVViewer *viewer, size_t start_col, const DSV
     (void)rows; // Suppress unused warning
     
     HeaderLayout layout;
-    calculate_header_layout(viewer, start_col, cols, &layout);
+    calculate_header_layout(viewer, (ViewState*)state, start_col, cols, &layout);
     render_header_background(y, layout.underline_width);
-    int content_width = render_header_columns(viewer, y, start_col, cols, &layout);
+    int content_width = render_header_columns(viewer, state, y, start_col, cols, &layout);
     
     return content_width; // Return the actual header content width
 }
 
 // Calculate screen position and width for a given column
 // Returns true if column is visible, false otherwise
-static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size_t target_col, 
+static bool get_column_screen_position(DSVViewer *viewer, const ViewState *state, size_t start_col, size_t target_col, 
                                        int screen_width, int *out_x, int *out_width) {
     if (target_col < start_col) {
         return false;  // Column is scrolled off to the left
     }
     
     // Parse the header to get the actual number of fields
-    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[0], viewer->parsed_data->fields, viewer->config->max_cols);
+    size_t num_fields = 0;
+    if (state->current_view && state->current_view->data_source) {
+        DataSource *ds = state->current_view->data_source;
+        num_fields = ds->ops->get_col_count(ds->context);
+    }
     
     int x = 0;
     for (size_t col = start_col; col <= target_col && col < num_fields; col++) {
@@ -240,23 +239,12 @@ static bool get_column_screen_position(DSVViewer *viewer, size_t start_col, size
 }
 
 static void display_table_view(DSVViewer *viewer, const ViewState *state);
-static void display_data_view(DSVViewer *viewer, const ViewState *state);
 static void display_help_panel(void);
 
 // Draw regular data row (keep simple, it works!)
 static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_t display_row, size_t start_col, const DSVConfig *config) {
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(config, 0);
-
-    size_t file_line_unadjusted = get_file_row(state, display_row);
-    if (file_line_unadjusted == (size_t)-1) {
-        return 0; // Row is not visible in this view
-    }
-
-    size_t file_line = file_line_unadjusted;
-    if (viewer->display_state->show_header) {
-        file_line++;
-    }
 
     bool is_selected = is_row_selected(state, display_row);
     if (is_selected) {
@@ -268,14 +256,46 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
     (void)rows; // Suppress unused warning
     
     int x = 0;
-    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[file_line], viewer->parsed_data->fields, config->max_cols);
+    
+    size_t num_fields = 0;
+    if (state->current_view && state->current_view->data_source) {
+        DataSource *ds = state->current_view->data_source;
+        num_fields = ds->ops->get_col_count(ds->context);
+    }
     
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
         int col_width = get_column_width(viewer, col);
         
-        const char *display_string = render_column_content(viewer, col, col_width);
+        char cell_buffer[DEFAULT_MAX_FIELD_LEN];
+        int result = -1;
+
+        if (state->current_view && state->current_view->data_source) {
+             DataSource *ds = state->current_view->data_source;
+             size_t actual_row = display_row;
+
+             // If this is a filtered view, translate display row to actual data source row
+             if (state->current_view->visible_rows) {
+                 if (display_row >= state->current_view->visible_row_count) {
+                     // Should not happen if calling code is correct, but safe guard.
+                     continue; 
+                 }
+                 actual_row = state->current_view->visible_rows[display_row];
+             }
+
+             result = ds->ops->get_cell(
+                 ds->context, actual_row, col, cell_buffer, sizeof(cell_buffer));
+        }
+        
+        if (result < 0) {
+            // Error or out of bounds, maybe draw something? For now, skip.
+            continue;
+        }
+
+        const char *display_string = get_truncated_string(viewer, 
+                                                          cell_buffer, 
+                                                          col_width);
         
         // Draw the field content
         mvaddstr(y, x, display_string);
@@ -308,9 +328,6 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
         case PANEL_TABLE_VIEW:
             display_table_view(viewer, state);
             break;
-        case PANEL_DATA_VIEW:
-            display_data_view(viewer, state);
-            break;
         case PANEL_FREQ_ANALYSIS:
             // This panel is deprecated and will be replaced by the new data view panel.
             // For now, it does nothing.
@@ -340,7 +357,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     
     if (viewer->display_state->show_header) {
         apply_header_row_format();
-        draw_header_row(0, viewer, start_col, viewer->config);
+        draw_header_row(0, viewer, state, start_col, viewer->config);
         remove_header_row_format();
         screen_start_row = 1;
     }
@@ -368,7 +385,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     
     // Apply column highlighting after all rows are drawn
     int col_x, col_width;
-    if (get_column_screen_position(viewer, start_col, cursor_col, cols, &col_x, &col_width)) {
+    if (get_column_screen_position(viewer, state, start_col, cursor_col, cols, &col_x, &col_width)) {
         // Column is visible
         if (viewer->display_state->show_header) {
             // Apply special highlighting to header column that preserves underline
@@ -413,54 +430,6 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
                  total_rows_in_view,
                  state->table_view.selection_count);
     }
-}
-
-static void display_data_view(DSVViewer *viewer, const ViewState *state) {
-    (void)viewer;
-    clear();
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-
-    InMemoryTable *table = state->data_view.table;
-    if (!table) {
-        mvprintw(0, 0, "Error: No data table available.");
-        return;
-    }
-
-    // --- Title ---
-    if (table->title) {
-        attron(A_BOLD | A_UNDERLINE);
-        mvprintw(0, 2, "%s", table->title);
-        attroff(A_BOLD | A_UNDERLINE);
-    }
-
-    // --- Header ---
-    int x = 2;
-    for (size_t i = 0; i < table->col_count; i++) {
-        mvprintw(2, x, "%s", table->headers[i]);
-        x += (cols / table->col_count); // Simple column width for now
-    }
-    mvhline(3, 0, ACS_HLINE, cols);
-
-    // --- Content ---
-    int content_rows = rows - 5; // Title, header, line, footer
-    for (int i = 0; i < content_rows; i++) {
-        int screen_row = i + 4;
-        size_t data_row = state->data_view.scroll_top + i;
-
-        if (data_row >= table->row_count) {
-            break;
-        }
-
-        int col_x = 2;
-        for (size_t j = 0; j < table->col_count; j++) {
-            mvprintw(screen_row, col_x, "%.*s", (cols / (int)table->col_count) - 3, table->data[data_row][j]);
-            col_x += (cols / table->col_count);
-        }
-    }
-
-    // --- Footer ---
-    mvprintw(rows - 1, 2, "Press 'q' or 'Esc' to close. Use Arrow Keys to scroll.");
 }
 
 static void display_help_panel(void) {

@@ -17,6 +17,7 @@ struct CacheAllocator;
 struct StringInternTable;
 struct Cache;
 struct ErrorContext;
+struct DataSource;
 
 // Core data structure
 typedef struct DSVViewer {
@@ -35,6 +36,7 @@ typedef struct DSVViewer {
     BufferPool *buffer_pool;
     ViewManager *view_manager;
     ViewState view_state;
+    struct DataSource *main_data_source;
 } DSVViewer;
 
 // Core application function declarations

@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include "logging.h"
 #include "error_context.h"
+#include "utils.h"
 
 int main(int argc, char *argv[]) {
     init_logging(LOG_LEVEL_INFO, "-"); // Log to stderr
@@ -22,6 +23,7 @@ int main(int argc, char *argv[]) {
     const char *config_filename = NULL;
     char delimiter = 0;
     bool show_header = true;
+    bool benchmark_mode = false;
 
     // --- Argument Parsing ---
     for (int i = 2; i < argc; i++) {
@@ -31,6 +33,8 @@ int main(int argc, char *argv[]) {
             delimiter = argv[++i][0];
         } else if (strcmp(argv[i], "--headerless") == 0) {
             show_header = false;
+        } else if (strcmp(argv[i], "--benchmark") == 0) {
+            benchmark_mode = true;
         }
     }
 
@@ -50,6 +54,7 @@ int main(int argc, char *argv[]) {
 
     // --- Viewer Initialization ---
     DSVViewer viewer = {0};
+    double start_time = get_time_ms();
     DSVResult result = init_viewer(&viewer, filename, delimiter, &config);
     
     if (result != DSV_OK) {
@@ -60,6 +65,13 @@ int main(int argc, char *argv[]) {
     
     // Apply header visibility setting
     viewer.display_state->show_header = show_header;
+
+    if (benchmark_mode) {
+        printf("Benchmark mode: init complete in %.2fms\n", 
+               get_time_ms() - start_time);
+        cleanup_viewer(&viewer);
+        return 0;
+    }
 
 #ifndef TEST_BUILD
     initscr();

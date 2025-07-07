@@ -4,6 +4,7 @@
 #include "navigation.h"
 #include "parsed_data.h"
 #include "view_manager.h"
+#include "core/data_source.h"
 #include <ncurses.h>
 #include <stdbool.h>
 
@@ -12,8 +13,22 @@ void run_viewer(DSVViewer *viewer) {
     // We just need to set up the row selection for the main view.
     init_row_selection(&viewer->view_state, viewer->parsed_data->num_lines);
 
-    // Create the main view, which represents the full dataset
-    View *main_view = create_main_view(viewer->parsed_data->num_lines);
+    // Create file data source for main view
+    DataSource *file_ds = create_file_data_source(viewer);
+    if (!file_ds) {
+        // Error is logged in create function
+        return;
+    }
+
+    // Store in viewer for cleanup
+    viewer->main_data_source = file_ds;
+    
+    // Create main view with data source
+    size_t total_rows = viewer->parsed_data->num_lines;
+    if (viewer->parsed_data->has_header) {
+        total_rows--; // Don't count header as data row
+    }
+    View *main_view = create_main_view(total_rows, file_ds);
     if (!main_view) {
         return; // Failed to create main view
     }
