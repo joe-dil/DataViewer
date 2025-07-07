@@ -2,6 +2,7 @@
 #include "navigation.h" // For init_row_selection
 #include "app_init.h"   // For init_view_state
 #include "analysis.h"
+#include "core/data_source.h"  // For DataSource access
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -45,6 +46,12 @@ View* create_main_view(DataSource *data_source) {
         main_view->visible_row_count = 0;
     }
     
+    // Initialize cursor position
+    main_view->cursor_row = 0;
+    main_view->cursor_col = 0;
+    main_view->start_row = 0;
+    main_view->start_col = 0;
+    
     // Note: Selection state is initialized separately by init_row_selection()
     
     return main_view;
@@ -53,6 +60,15 @@ View* create_main_view(DataSource *data_source) {
 void switch_to_next_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return; // Should not happen, but safe
+    
+    // Save current cursor position to the current view
+    if (state->current_view) {
+        state->current_view->cursor_row = state->table_view.cursor_row;
+        state->current_view->cursor_col = state->table_view.cursor_col;
+        state->current_view->start_row = state->table_view.table_start_row;
+        state->current_view->start_col = state->table_view.table_start_col;
+    }
+    
     manager->current = manager->current->next;
     if (!manager->current) {
         manager->current = manager->views;
@@ -63,6 +79,14 @@ void switch_to_next_view(ViewManager *manager, ViewState *state) {
 void switch_to_prev_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return;
+    
+    // Save current cursor position to the current view
+    if (state->current_view) {
+        state->current_view->cursor_row = state->table_view.cursor_row;
+        state->current_view->cursor_col = state->table_view.cursor_col;
+        state->current_view->start_row = state->table_view.table_start_row;
+        state->current_view->start_col = state->table_view.table_start_col;
+    }
     
     if (manager->current->prev) {
         manager->current = manager->current->prev;
@@ -100,6 +124,14 @@ void close_current_view(ViewManager *manager, ViewState *state) {
     }
 
     View *view_to_close = manager->current;
+
+    // Save current cursor position to the view being closed (in case we need it)
+    if (state && state->current_view == view_to_close) {
+        view_to_close->cursor_row = state->table_view.cursor_row;
+        view_to_close->cursor_col = state->table_view.cursor_col;
+        view_to_close->start_row = state->table_view.table_start_row;
+        view_to_close->start_col = state->table_view.table_start_col;
+    }
 
     // Change current view to previous or next
     if (view_to_close->prev) {
@@ -161,6 +193,12 @@ View* create_view_from_selection(ViewManager *manager,
 
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
+    // Initialize cursor position - inherit column from current view since it's the same data source
+    new_view->cursor_row = 0;  // Reset row since indices are different
+    new_view->cursor_col = state->table_view.cursor_col;  // Keep same column
+    new_view->start_row = 0;
+    new_view->start_col = state->table_view.table_start_col;  // Keep column viewport
+
     // Initialize selection state for the new view
     init_row_selection(new_view, count);
 
@@ -179,6 +217,14 @@ View* create_view_from_selection(ViewManager *manager,
     
     manager->view_count++;
 
+    // Save current view's cursor position before switching
+    if (state && state->current_view) {
+        state->current_view->cursor_row = state->table_view.cursor_row;
+        state->current_view->cursor_col = state->table_view.cursor_col;
+        state->current_view->start_row = state->table_view.table_start_row;
+        state->current_view->start_col = state->table_view.table_start_col;
+    }
+
     // Switch to the new view
     manager->current = new_view;
     reset_view_state_for_new_view(state, manager->current);
@@ -186,15 +232,28 @@ View* create_view_from_selection(ViewManager *manager,
     return new_view;
 }
 
-// When switching views, reset the UI state to sensible defaults for the new view's data.
+// When switching views, restore the saved cursor position for the new view.
 void reset_view_state_for_new_view(ViewState *state, View *new_view) {
     if (!state || !new_view) return;
 
-    // Reset cursor and scroll positions
-    state->table_view.cursor_row = 0;
-    state->table_view.cursor_col = 0;
-    state->table_view.table_start_row = 0;
-    state->table_view.table_start_col = 0;
+    // Restore the saved cursor position for this view
+    state->table_view.cursor_row = new_view->cursor_row;
+    state->table_view.cursor_col = new_view->cursor_col;
+    state->table_view.table_start_row = new_view->start_row;
+    state->table_view.table_start_col = new_view->start_col;
+
+    // Validate the restored position
+    if (new_view->visible_row_count > 0 && state->table_view.cursor_row >= new_view->visible_row_count) {
+        state->table_view.cursor_row = new_view->visible_row_count - 1;
+    }
+    
+    size_t col_count = 0;
+    if (new_view->data_source && new_view->data_source->ops) {
+        col_count = new_view->data_source->ops->get_col_count(new_view->data_source->context);
+    }
+    if (col_count > 0 && state->table_view.cursor_col >= col_count) {
+        state->table_view.cursor_col = col_count - 1;
+    }
 
     // Update current view pointer
     state->current_view = new_view;

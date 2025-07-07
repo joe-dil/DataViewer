@@ -16,6 +16,12 @@ typedef struct View {
     size_t selection_count;       // Number of selected rows in this view
     size_t total_rows;            // Total rows available for selection
     
+    // Cursor position - per-view to handle different column structures
+    size_t cursor_row;            // Current cursor row in this view
+    size_t cursor_col;            // Current cursor column in this view
+    size_t start_row;             // First visible row in viewport
+    size_t start_col;             // First visible column in viewport
+    
     struct View *next;
     struct View *prev;
 } View;

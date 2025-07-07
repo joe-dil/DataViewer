@@ -186,6 +186,12 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     freq_view->visible_rows = NULL;
                     freq_view->visible_row_count = ds->ops->get_row_count(ds->context);
                     
+                    // Initialize cursor position
+                    freq_view->cursor_row = 0;
+                    freq_view->cursor_col = 0;
+                    freq_view->start_row = 0;
+                    freq_view->start_col = 0;
+                    
                     // Initialize selection state for frequency view
                     init_row_selection(freq_view, freq_view->visible_row_count);
                     
@@ -196,6 +202,14 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                         set_error_message(viewer, "Maximum number of views reached (%zu)", 
                                         viewer->view_manager->max_views);
                         return INPUT_CONSUMED;
+                    }
+                    
+                    // Save current view's cursor position before switching
+                    if (state->current_view) {
+                        state->current_view->cursor_row = state->table_view.cursor_row;
+                        state->current_view->cursor_col = state->table_view.cursor_col;
+                        state->current_view->start_row = state->table_view.table_start_row;
+                        state->current_view->start_col = state->table_view.table_start_col;
                     }
                     
                     // Switch to new view
