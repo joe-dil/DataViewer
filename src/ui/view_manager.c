@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 ViewManager* init_view_manager(void) {
     ViewManager *manager = calloc(1, sizeof(ViewManager));
@@ -25,7 +26,7 @@ void cleanup_view_manager(ViewManager *manager) {
         if (current->data_source && current->owns_data_source) {
             destroy_data_source(current->data_source);
         }
-        free(current->visible_rows);
+        free(current->ranges);
         free(current);
         current = next;
     }
@@ -39,7 +40,8 @@ View* create_main_view(DataSource *data_source) {
     snprintf(main_view->name, sizeof(main_view->name), "Full Dataset");
     main_view->data_source = data_source;
     main_view->owns_data_source = false;  // Main view doesn't own file data source
-    main_view->visible_rows = NULL; // Main view shows all rows
+    main_view->ranges = NULL;
+    main_view->num_ranges = 0;
     if (data_source && data_source->ops && data_source->ops->get_row_count) {
         main_view->visible_row_count = data_source->ops->get_row_count(data_source->context);
     } else {
@@ -140,7 +142,7 @@ void close_current_view(ViewManager *manager, ViewState *state) {
     if (view_to_close->data_source && view_to_close->owns_data_source) {
         destroy_data_source(view_to_close->data_source);
     }
-    free(view_to_close->visible_rows);
+    free(view_to_close->ranges);
     // Selections are not preserved per-view in this model, so no cleanup needed here.
     free(view_to_close);
 
@@ -162,13 +164,37 @@ View* create_view_from_selection(ViewManager *manager,
     View *new_view = calloc(1, sizeof(View));
     if (!new_view) return NULL;
 
-    // Copy selected rows
-    new_view->visible_rows = malloc(count * sizeof(size_t));
-    if (!new_view->visible_rows) {
-        free(new_view);
-        return NULL;
+    // --- Range Compression Logic ---
+    // This assumes selected_rows is sorted.
+    if (count > 0) {
+        // Over-allocate for simplicity, then realloc later if memory is a major concern.
+        new_view->ranges = malloc(sizeof(RowRange) * count);
+        if (!new_view->ranges) {
+            free(new_view);
+            return NULL;
+        }
+        
+        new_view->num_ranges = 1;
+        new_view->ranges[0].start = selected_rows[0];
+        new_view->ranges[0].end = selected_rows[0];
+
+        for (size_t i = 1; i < count; i++) {
+            if (selected_rows[i] == new_view->ranges[new_view->num_ranges - 1].end + 1) {
+                // Extend the current range
+                new_view->ranges[new_view->num_ranges - 1].end = selected_rows[i];
+            } else {
+                // Start a new range
+                new_view->num_ranges++;
+                new_view->ranges[new_view->num_ranges - 1].start = selected_rows[i];
+                new_view->ranges[new_view->num_ranges - 1].end = selected_rows[i];
+            }
+        }
+    } else {
+        new_view->ranges = NULL;
+        new_view->num_ranges = 0;
     }
-    memcpy(new_view->visible_rows, selected_rows, count * sizeof(size_t));
+    // --- End Range Compression ---
+
     new_view->visible_row_count = count;
     new_view->data_source = parent_data_source;
     new_view->owns_data_source = false; // This view just filters the parent, doesn't own it.
@@ -253,4 +279,45 @@ bool add_view_to_manager(ViewManager *manager, View *view) {
 
     manager->view_count++;
     return true;
+}
+
+static void free_view_resources(View *view) {
+    if (!view) return;
+    
+    if (view->owns_data_source) {
+        destroy_data_source(view->data_source);
+    }
+    free(view->row_selected);
+    free(view->ranges); // Free the new ranges array
+    // The old visible_rows is deprecated and should be removed later.
+    // For now, ensure it's freed if it was somehow allocated.
+    free(view->visible_rows);
+}
+
+size_t view_get_actual_row_index(const View *view, size_t display_row) {
+    if (!view) return SIZE_MAX;
+
+    // If there are no ranges, the view is a direct 1:1 mapping
+    if (view->num_ranges == 0) {
+        // This assumes that if there are no ranges, all rows from the source are visible.
+        size_t total_rows = view->data_source->ops->get_row_count(view->data_source->context);
+        if (display_row < total_rows) {
+            return display_row;
+        } else {
+            return SIZE_MAX; // Out of bounds
+        }
+    }
+    
+    size_t current_base = 0;
+    for (size_t i = 0; i < view->num_ranges; i++) {
+        size_t range_len = view->ranges[i].end - view->ranges[i].start + 1;
+        if (display_row < current_base + range_len) {
+            // The target row is in this range
+            size_t offset = display_row - current_base;
+            return view->ranges[i].start + offset;
+        }
+        current_base += range_len;
+    }
+    
+    return SIZE_MAX; // display_row is out of bounds
 } 

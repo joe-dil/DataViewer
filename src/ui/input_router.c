@@ -24,12 +24,13 @@ static char* get_field_at_cursor(const ViewState *state) {
     size_t row = state->current_view->cursor_row;
     size_t col = state->current_view->cursor_col;
 
-    // Handle filtered views where visible_rows maps the display row to the data source row
-    if (state->current_view->visible_rows) {
-        if (row >= state->current_view->visible_row_count) {
-            return NULL;
+    // Handle filtered views by translating display row to actual data source row
+    if (state->current_view->num_ranges > 0) {
+        size_t actual_row = view_get_actual_row_index(state->current_view, row);
+        if (actual_row == SIZE_MAX) {
+            return NULL; // Invalid display row, should not happen if cursor is valid
         }
-        row = state->current_view->visible_rows[row];
+        row = actual_row;
     }
 
     FieldDesc fd = ds->ops->get_cell(ds->context, row, col);

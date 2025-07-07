@@ -333,7 +333,8 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     size_t num_rows = view->visible_row_count;
 
     for (size_t i = 0; i < num_rows; i++) {
-        size_t actual_row_index = view->visible_rows ? view->visible_rows[i] : i;
+        size_t actual_row_index = view_get_actual_row_index(view, i);
+        if (actual_row_index == SIZE_MAX) continue; // Should not happen
         
         FieldDesc fd = ds->ops->get_cell(ds->context, actual_row_index, column_index);
         if (fd.start == NULL || fd.length == 0) {
