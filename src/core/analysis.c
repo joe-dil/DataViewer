@@ -15,6 +15,52 @@
 #include <stdint.h>
 #include "logging.h"
 
+// --- Local Arena Allocator for Frequency Analysis ---
+
+typedef struct {
+    char *buffer;
+    size_t size;
+    size_t offset;
+} Arena;
+
+static Arena* arena_create(size_t size) {
+    Arena *arena = malloc(sizeof(Arena));
+    if (!arena) return NULL;
+
+    arena->buffer = malloc(size);
+    if (!arena->buffer) {
+        free(arena);
+        return NULL;
+    }
+
+    arena->size = size;
+    arena->offset = 0;
+    return arena;
+}
+
+static void arena_destroy(Arena *arena) {
+    if (!arena) return;
+    free(arena->buffer);
+    free(arena);
+}
+
+static char* arena_alloc(Arena *arena, const char *str) {
+    if (!arena || !str) return NULL;
+
+    size_t len = strlen(str) + 1;
+    if (arena->offset + len > arena->size) {
+        // Arena is full. This is a limitation we accept for now to avoid
+        // complexity of resizing. A larger initial arena size might be needed.
+        LOG_WARN("Local arena full during frequency analysis. Results may be incomplete.");
+        return NULL;
+    }
+
+    char *dest = arena->buffer + arena->offset;
+    memcpy(dest, str, len);
+    arena->offset += len;
+    return dest;
+}
+
 // --- Public API Functions ---
 
 void cleanup_column_analysis(ColumnAnalysis *analysis) {
@@ -162,30 +208,26 @@ static FreqAnalysisHashTable* hash_table_create(struct DSVViewer *viewer, int si
     return table;
 }
 
-// Helper function to free all strings in the hash table
-// OWNERSHIP: Frees all malloc'd strings stored in hash table entries,
-// then frees the entries themselves. Does NOT free the table structure.
-static void hash_table_free_strings(FreqAnalysisHashTable *table) {
-    if (!table || !table->buckets) return;
-    
-    for (int i = 0; i < table->size; i++) {
-        FreqAnalysisEntry *entry = table->buckets[i];
-        while (entry) {
-            free((char*)entry->value);
-            FreqAnalysisEntry *next = entry->next;
-            free(entry);
-            entry = next;
-        }
-    }
-}
-
 // Free all memory associated with the hash table
-// OWNERSHIP: Only frees the table structure and buckets array.
-// Does NOT free the strings - caller must call hash_table_free_strings() first
+// OWNERSHIP: Frees the table structure, the buckets array, all entries,
+// and all strings pointed to by the entries.
 static void hash_table_destroy(FreqAnalysisHashTable *table) {
     if (!table) return;
 
-    // Don't free the strings here - caller is responsible
+    // Free the linked lists of entries in each bucket
+    if (table->buckets) {
+        for (int i = 0; i < table->size; i++) {
+            FreqAnalysisEntry *entry = table->buckets[i];
+            while (entry) {
+                FreqAnalysisEntry *next = entry->next;
+                free((char*)entry->value); // Free the strdup'd string
+                free(entry);
+                entry = next;
+            }
+        }
+    }
+
+    // Free the buckets array and the table structure itself
     free(table->buckets);
     free(table);
 }
@@ -249,7 +291,7 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
         return;
     }
 
-    new_entry->value = value; 
+    new_entry->value = value;
     new_entry->count = 1;
     new_entry->next = table->buckets[index];
     table->buckets[index] = new_entry;
@@ -312,7 +354,6 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
 
         render_field(&fd, field_buffer, viewer->config->max_field_len);
         
-        // Don't use intern_string - it's completely wrong for this use case
         // Just duplicate the string for the hash table
         char* value_copy = strdup(field_buffer);
         if (!value_copy) {
@@ -336,7 +377,6 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
 
     FreqValueCount *sorted_items = malloc(table->item_count * sizeof(FreqValueCount));
     if (!sorted_items) {
-        hash_table_free_strings(table);  // Free all strings before destroying table
         hash_table_destroy(table);
         return NULL;
     }
@@ -371,7 +411,6 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     InMemoryTable *result_table = create_in_memory_table(table_title_buffer, 2, headers);
     if (!result_table) {
         free(sorted_items);
-        hash_table_free_strings(table);  // Free all strings before destroying table
         hash_table_destroy(table);
         return NULL;
     }
@@ -383,7 +422,6 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
         if (add_in_memory_table_row(result_table, row_data) != 0) {
             free(sorted_items);
             free_in_memory_table(result_table);
-            hash_table_free_strings(table);  // Free all strings before destroying table
             hash_table_destroy(table);
             return NULL;
         }
@@ -391,9 +429,9 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
 
     free(sorted_items);
     
-    // Now free all the strings we allocated
-    hash_table_free_strings(table);
-    
+    // The strings from the hash table have been copied into the result_table.
+    // Now we need to free the hash table and the strings it owns.
+    // The hash_table_destroy function now handles freeing the entries correctly.
     hash_table_destroy(table);
 
     return result_table;
