@@ -68,83 +68,71 @@ void cleanup_column_analysis(ColumnAnalysis *analysis) {
     SAFE_FREE(analysis->col_widths);
 }
 
-// Analyze column widths by sampling the file data
-DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *parsed_data, DisplayState *display_state, const DSVConfig *config) {
-    CHECK_NULL_RET(file_data, DSV_ERROR_INVALID_ARGS);
-    CHECK_NULL_RET(parsed_data, DSV_ERROR_INVALID_ARGS);
-    CHECK_NULL_RET(display_state, DSV_ERROR_INVALID_ARGS);
-    CHECK_NULL_RET(config, DSV_ERROR_INVALID_ARGS);
+// Calculate the width for a single column by sampling the file data
+static int calculate_single_column_width(DSVViewer *viewer, int column_index) {
+    const FileData *file_data = viewer->file_data;
+    const ParsedData *parsed_data = viewer->parsed_data;
+    const DSVConfig *config = viewer->config;
 
-    // Handle empty files
-    if (parsed_data->num_lines == 0) {
-        display_state->num_cols = 0;
-        display_state->col_widths = NULL;
-        return DSV_OK;
+    // Handle empty files or invalid column index
+    if (parsed_data->num_lines == 0 || column_index < 0 || (size_t)column_index >= viewer->display_state->num_cols) {
+        return config->min_column_width;
     }
 
-    size_t sample_lines = parsed_data->num_lines > (size_t)config->column_analysis_sample_lines ? 
-                         (size_t)config->column_analysis_sample_lines : parsed_data->num_lines;
-    if (sample_lines == 0) {
-        display_state->num_cols = 0;
-        display_state->col_widths = NULL;
-        return DSV_OK;
-    }
-
-    int* col_widths_tmp = calloc(config->max_cols, sizeof(int));
-    CHECK_ALLOC(col_widths_tmp);
-
-    size_t max_cols_found = 0;
+    size_t sample_lines = parsed_data->num_lines > (size_t)config->column_analysis_sample_lines 
+                         ? (size_t)config->column_analysis_sample_lines : parsed_data->num_lines;
     
+    int max_width = 0;
+
     // Reuse the existing fields buffer instead of allocating new one
     FieldDesc* analysis_fields = parsed_data->fields;
     if (!analysis_fields) {
-        SAFE_FREE(col_widths_tmp);
-        return DSV_ERROR_INVALID_ARGS;
+        return config->min_column_width;
+    }
+    
+    // Get header width
+    if (parsed_data->has_header) {
+        char temp_buffer[config->max_field_len];
+        render_field(&parsed_data->header_fields[column_index], temp_buffer, config->max_field_len);
+        max_width = strlen(temp_buffer);
     }
 
     for (size_t i = 0; i < sample_lines; i++) {
-        // Use the main parse_line function instead of duplicate parsing
         size_t num_fields = parse_line(file_data->data, file_data->length, parsed_data->delimiter, parsed_data->line_offsets[i], analysis_fields, config->max_cols);
 
-        if (num_fields > max_cols_found) {
-            max_cols_found = num_fields;
-        }
+        if ((size_t)column_index < num_fields) {
+            if (max_width >= config->max_column_width) break;
 
-        for (size_t col = 0; col < num_fields && col < (size_t)config->max_cols; col++) {
-            if (col_widths_tmp[col] >= config->max_column_width) continue;
-            
-            // Use the main render_field + width calculation instead of duplicate logic
             char temp_buffer[config->max_field_len];
-            render_field(&analysis_fields[col], temp_buffer, config->max_field_len);
+            render_field(&analysis_fields[column_index], temp_buffer, config->max_field_len);
             int width = strlen(temp_buffer);
             
-            if (width > col_widths_tmp[col]) {
-                col_widths_tmp[col] = width;
+            if (width > max_width) {
+                max_width = width;
             }
         }
     }
 
-    size_t num_cols = max_cols_found > (size_t)config->max_cols ? (size_t)config->max_cols : max_cols_found;
-    if (num_cols > 0) {
-        display_state->col_widths = malloc(num_cols * sizeof(int));
-        if (!display_state->col_widths) {
-            SAFE_FREE(col_widths_tmp);
-            return DSV_ERROR_MEMORY;
-        }
+    // Clamp width to configured min/max
+    if (max_width > config->max_column_width) max_width = config->max_column_width;
+    if (max_width < config->min_column_width) max_width = config->min_column_width;
+    
+    return max_width;
+}
 
-        for (size_t i = 0; i < num_cols; i++) {
-            display_state->col_widths[i] = col_widths_tmp[i] > config->max_column_width ? config->max_column_width :
-                                                  (col_widths_tmp[i] < config->min_column_width ? config->min_column_width : col_widths_tmp[i]);
-        }
-        display_state->num_cols = num_cols;
-    } else {
-        display_state->col_widths = NULL;
-        display_state->num_cols = 0;
+int analysis_get_column_width(struct DSVViewer *viewer, int column_index) {
+    if (!viewer || !viewer->display_state || !viewer->display_state->col_widths || column_index < 0 || (size_t)column_index >= viewer->display_state->num_cols) {
+        return 0; // Or a default width
     }
 
-    SAFE_FREE(col_widths_tmp);
-    return DSV_OK;
-} 
+    // If width is not calculated yet (is sentinel value), calculate and cache it
+    if (viewer->display_state->col_widths[column_index] == -1) {
+        int width = calculate_single_column_width(viewer, column_index);
+        viewer->display_state->col_widths[column_index] = width;
+    }
+
+    return viewer->display_state->col_widths[column_index];
+}
 
 // --- Frequency Analysis ---
 

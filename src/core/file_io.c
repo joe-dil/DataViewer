@@ -215,10 +215,24 @@ DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
                 memcpy(viewer->parsed_data->header_fields, temp_fields, header_num_fields * sizeof(FieldDesc));
             }
             free(temp_fields);
+
+            // Initialize display state for lazy column width calculation
+            viewer->display_state->num_cols = header_num_fields;
+            viewer->display_state->col_widths = malloc(header_num_fields * sizeof(int));
+            if (viewer->display_state->col_widths) {
+                for (size_t i = 0; i < header_num_fields; i++) {
+                    viewer->display_state->col_widths[i] = -1; // Sentinel for not-yet-calculated
+                }
+            } else {
+                LOG_ERROR("Failed to allocate for column widths");
+                return DSV_ERROR_MEMORY;
+            }
         }
     } else {
         viewer->parsed_data->has_header = 0;
         viewer->parsed_data->num_header_fields = 0;
+        viewer->display_state->num_cols = 0;
+        viewer->display_state->col_widths = NULL;
     }
     
     // Final memory and bounds checks

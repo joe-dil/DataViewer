@@ -163,10 +163,10 @@ static DSVResult init_display_system(DSVViewer *viewer) {
     
     double phase_time = get_time_ms();
     
-    if (analyze_column_widths(viewer->file_data, viewer->parsed_data, viewer->display_state, viewer->config) != DSV_OK) {
-        LOG_ERROR("Failed to analyze columns.");
-        return DSV_ERROR_DISPLAY;
-    }
+    // if (analyze_column_widths(viewer->file_data, viewer->parsed_data, viewer->display_state, viewer->config) != DSV_OK) {
+    //     LOG_ERROR("Failed to analyze columns.");
+    //     return DSV_ERROR_DISPLAY;
+    // }
     
     configure_viewer_settings(viewer, viewer->config);
     initialize_viewer_cache(viewer, viewer->config);

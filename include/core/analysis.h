@@ -29,6 +29,16 @@ typedef struct {
 void cleanup_column_analysis(ColumnAnalysis *analysis);
 
 /**
+ * @brief Gets the display width for a specific column, calculating it if necessary.
+ * This function implements lazy evaluation for column widths.
+ *
+ * @param viewer The main application viewer instance.
+ * @param column_index The index of the column to get the width for.
+ * @return The calculated and cached width of the column.
+ */
+int analysis_get_column_width(struct DSVViewer *viewer, int column_index);
+
+/**
  * @brief Analyze CSV data to determine optimal column display widths.
  * Samples file content to calculate column widths, respecting min/max limits.
  * Results are stored in viewer->display_state for rendering.

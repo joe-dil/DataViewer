@@ -38,7 +38,7 @@ static int get_column_width(DSVViewer *viewer, const ViewState *state, size_t co
     if (ds->type == DATA_SOURCE_MEMORY) {
         return ds->ops->get_column_width(ds->context, col);
     } else { // DATA_SOURCE_FILE
-        return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : DEFAULT_COL_WIDTH;
+        return analysis_get_column_width(viewer, col);
     }
 }
 
