@@ -395,10 +395,10 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
         return;
     }
     
-    size_t start_row = state->table_view.table_start_row;
-    size_t start_col = state->table_view.table_start_col;
-    size_t cursor_row = state->table_view.cursor_row;
-    size_t cursor_col = state->table_view.cursor_col;
+    size_t start_row = current_view->start_row;
+    size_t start_col = current_view->start_col;
+    size_t cursor_row = current_view->cursor_row;
+    size_t cursor_col = current_view->cursor_col;
     
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -412,7 +412,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
         // Cursor column is not visible with current start_col
         if (cursor_col < start_col) {
             // Cursor is to the left of viewport
-            ((ViewState*)state)->table_view.table_start_col = cursor_col;
+            ((View*)current_view)->start_col = cursor_col;
             start_col = cursor_col;
         } else {
             // Cursor is to the right of viewport
@@ -420,7 +420,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
             size_t new_start = start_col + 1;
             if (get_column_screen_position(viewer, state, new_start, cursor_col, cols, &cursor_x, &cursor_width)) {
                 // Scrolling by 1 is enough
-                ((ViewState*)state)->table_view.table_start_col = new_start;
+                ((View*)current_view)->start_col = new_start;
                 start_col = new_start;
             } else {
                 // Need to scroll more - find the minimum that works
@@ -428,7 +428,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
                 while (new_start <= cursor_col && !get_column_screen_position(viewer, state, new_start, cursor_col, cols, &cursor_x, &cursor_width)) {
                     new_start++;
                 }
-                ((ViewState*)state)->table_view.table_start_col = new_start;
+                ((View*)current_view)->start_col = new_start;
                 start_col = new_start;
             }
         }

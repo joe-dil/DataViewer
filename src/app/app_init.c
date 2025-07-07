@@ -213,10 +213,6 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
 void init_view_state(ViewState *state) {
     state->current_panel = PANEL_TABLE_VIEW;
     state->needs_redraw = true;
-    state->table_view.table_start_row = 0;
-    state->table_view.table_start_col = 0;
-    state->table_view.cursor_row = 0;
-    state->table_view.cursor_col = 0;
     // Selection state is now handled per-View, not in ViewState
     state->current_view = NULL;
 } 

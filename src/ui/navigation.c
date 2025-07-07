@@ -8,11 +8,11 @@
 #include <limits.h>
 
 void navigate_up(ViewState *state) {
-    if (state->table_view.cursor_row > 0) {
-        state->table_view.cursor_row--;
+    if (state->current_view->cursor_row > 0) {
+        state->current_view->cursor_row--;
         // Scroll up if cursor moves above viewport
-        if (state->table_view.cursor_row < state->table_view.table_start_row) {
-            state->table_view.table_start_row = state->table_view.cursor_row;
+        if (state->current_view->cursor_row < state->current_view->start_row) {
+            state->current_view->start_row = state->current_view->cursor_row;
         }
     }
 }
@@ -29,21 +29,21 @@ void navigate_down(ViewState *state, const struct DSVViewer *viewer) {
 
     size_t data_rows = state->current_view->visible_row_count;
 
-    if (state->table_view.cursor_row + 1 < data_rows) {
-        state->table_view.cursor_row++;
+    if (state->current_view->cursor_row + 1 < data_rows) {
+        state->current_view->cursor_row++;
         // Safe check to prevent overflow
-        if (visible_rows > 0 && state->table_view.cursor_row > state->table_view.table_start_row && 
-            state->table_view.cursor_row - state->table_view.table_start_row >= (size_t)visible_rows) {
-            state->table_view.table_start_row = state->table_view.cursor_row - visible_rows + 1;
+        if (visible_rows > 0 && state->current_view->cursor_row > state->current_view->start_row && 
+            state->current_view->cursor_row - state->current_view->start_row >= (size_t)visible_rows) {
+            state->current_view->start_row = state->current_view->cursor_row - visible_rows + 1;
         }
     }
 }
 
 void navigate_left(ViewState *state) {
-    if (state->table_view.cursor_col > 0) {
-        state->table_view.cursor_col--;
-        if (state->table_view.cursor_col < state->table_view.table_start_col) {
-            state->table_view.table_start_col = state->table_view.cursor_col;
+    if (state->current_view->cursor_col > 0) {
+        state->current_view->cursor_col--;
+        if (state->current_view->cursor_col < state->current_view->start_col) {
+            state->current_view->start_col = state->current_view->cursor_col;
         }
     }
 }
@@ -54,8 +54,8 @@ void navigate_right(ViewState *state, const struct DSVViewer *viewer) {
     DataSource *ds = state->current_view->data_source;
     size_t col_count = ds->ops->get_col_count(ds->context);
 
-    if (state->table_view.cursor_col + 1 < col_count) {
-        state->table_view.cursor_col++;
+    if (state->current_view->cursor_col + 1 < col_count) {
+        state->current_view->cursor_col++;
     }
 }
 
@@ -70,16 +70,16 @@ void navigate_page_up(ViewState *state, const struct DSVViewer *viewer) {
     }
 
     // Safe subtraction to prevent underflow
-    if (visible_rows > 0 && state->table_view.table_start_row > (size_t)visible_rows) {
-        state->table_view.table_start_row -= visible_rows;
+    if (visible_rows > 0 && state->current_view->start_row > (size_t)visible_rows) {
+        state->current_view->start_row -= visible_rows;
     } else {
-        state->table_view.table_start_row = 0;
+        state->current_view->start_row = 0;
     }
     
     // Ensure cursor stays within viewport
-    if (visible_rows > 0 && state->table_view.cursor_row > state->table_view.table_start_row &&
-        state->table_view.cursor_row - state->table_view.table_start_row >= (size_t)visible_rows) {
-        state->table_view.cursor_row = state->table_view.table_start_row + visible_rows - 1;
+    if (visible_rows > 0 && state->current_view->cursor_row > state->current_view->start_row &&
+        state->current_view->cursor_row - state->current_view->start_row >= (size_t)visible_rows) {
+        state->current_view->cursor_row = state->current_view->start_row + visible_rows - 1;
     }
 }
 
@@ -97,30 +97,30 @@ void navigate_page_down(ViewState *state, const struct DSVViewer *viewer) {
     
     // Safe addition to prevent overflow
     size_t new_start_row;
-    if (visible_rows > 0 && state->table_view.table_start_row <= SIZE_MAX - (size_t)visible_rows) {
-        new_start_row = state->table_view.table_start_row + visible_rows;
+    if (visible_rows > 0 && state->current_view->start_row <= SIZE_MAX - (size_t)visible_rows) {
+        new_start_row = state->current_view->start_row + visible_rows;
     } else {
         new_start_row = SIZE_MAX;  // Saturate at max
     }
     
-    state->table_view.table_start_row = new_start_row;
-    if (state->table_view.table_start_row >= data_rows) {
-        state->table_view.table_start_row = (data_rows > (size_t)visible_rows) 
+    state->current_view->start_row = new_start_row;
+    if (state->current_view->start_row >= data_rows) {
+        state->current_view->start_row = (data_rows > (size_t)visible_rows) 
             ? data_rows - visible_rows : 0;
     }
-    if (state->table_view.cursor_row < state->table_view.table_start_row) {
-        state->table_view.cursor_row = state->table_view.table_start_row;
+    if (state->current_view->cursor_row < state->current_view->start_row) {
+        state->current_view->cursor_row = state->current_view->start_row;
     }
-    if (state->table_view.cursor_row >= data_rows && data_rows > 0) {
-        state->table_view.cursor_row = data_rows - 1;
+    if (state->current_view->cursor_row >= data_rows && data_rows > 0) {
+        state->current_view->cursor_row = data_rows - 1;
     }
 }
 
 void navigate_home(ViewState *state) {
-    state->table_view.cursor_row = 0;
-    state->table_view.cursor_col = 0;
-    state->table_view.table_start_row = 0;
-    state->table_view.table_start_col = 0;
+    state->current_view->cursor_row = 0;
+    state->current_view->cursor_col = 0;
+    state->current_view->start_row = 0;
+    state->current_view->start_col = 0;
 }
 
 void navigate_end(ViewState *state, const struct DSVViewer *viewer) {
@@ -139,18 +139,18 @@ void navigate_end(ViewState *state, const struct DSVViewer *viewer) {
 
     size_t data_rows = state->current_view->visible_row_count;
 
-    state->table_view.cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
-    state->table_view.cursor_col = (col_count > 0) ? col_count - 1 : 0;
+    state->current_view->cursor_row = (data_rows > 0) ? data_rows - 1 : 0;
+    state->current_view->cursor_col = (col_count > 0) ? col_count - 1 : 0;
     
     // Safe calculation for start row
     if (visible_rows > 0 && data_rows > (size_t)visible_rows) {
-        state->table_view.table_start_row = data_rows - visible_rows;
+        state->current_view->start_row = data_rows - visible_rows;
     } else {
-        state->table_view.table_start_row = 0;
+        state->current_view->start_row = 0;
     }
     
     // Let the display logic handle the horizontal scroll position.
-    state->table_view.table_start_col = state->table_view.cursor_col;
+    state->current_view->start_col = state->current_view->cursor_col;
 }
 
 // Row selection functions

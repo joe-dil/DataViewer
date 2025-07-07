@@ -61,13 +61,7 @@ void switch_to_next_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return; // Should not happen, but safe
     
-    // Save current cursor position to the current view
-    if (state->current_view) {
-        state->current_view->cursor_row = state->table_view.cursor_row;
-        state->current_view->cursor_col = state->table_view.cursor_col;
-        state->current_view->start_row = state->table_view.table_start_row;
-        state->current_view->start_col = state->table_view.table_start_col;
-    }
+    // State is now managed directly on the View object; no need to save here.
     
     manager->current = manager->current->next;
     if (!manager->current) {
@@ -80,13 +74,7 @@ void switch_to_prev_view(ViewManager *manager, ViewState *state) {
     if (!manager || manager->view_count < 2) return;
     if (!manager->current) return;
     
-    // Save current cursor position to the current view
-    if (state->current_view) {
-        state->current_view->cursor_row = state->table_view.cursor_row;
-        state->current_view->cursor_col = state->table_view.cursor_col;
-        state->current_view->start_row = state->table_view.table_start_row;
-        state->current_view->start_col = state->table_view.table_start_col;
-    }
+    // State is now managed directly on the View object; no need to save here.
     
     if (manager->current->prev) {
         manager->current = manager->current->prev;
@@ -125,13 +113,7 @@ void close_current_view(ViewManager *manager, ViewState *state) {
 
     View *view_to_close = manager->current;
 
-    // Save current cursor position to the view being closed (in case we need it)
-    if (state && state->current_view == view_to_close) {
-        view_to_close->cursor_row = state->table_view.cursor_row;
-        view_to_close->cursor_col = state->table_view.cursor_col;
-        view_to_close->start_row = state->table_view.table_start_row;
-        view_to_close->start_col = state->table_view.table_start_col;
-    }
+    // No need to save state; it's already on the view object.
 
     // Change current view to previous or next
     if (view_to_close->prev) {
@@ -195,9 +177,9 @@ View* create_view_from_selection(ViewManager *manager,
 
     // Initialize cursor position - inherit column from current view since it's the same data source
     new_view->cursor_row = 0;  // Reset row since indices are different
-    new_view->cursor_col = state->table_view.cursor_col;  // Keep same column
+    new_view->cursor_col = state->current_view->cursor_col;  // Keep same column
     new_view->start_row = 0;
-    new_view->start_col = state->table_view.table_start_col;  // Keep column viewport
+    new_view->start_col = state->current_view->start_col;  // Keep column viewport
 
     // Initialize selection state for the new view
     init_row_selection(new_view, count);
@@ -217,13 +199,7 @@ View* create_view_from_selection(ViewManager *manager,
     
     manager->view_count++;
 
-    // Save current view's cursor position before switching
-    if (state && state->current_view) {
-        state->current_view->cursor_row = state->table_view.cursor_row;
-        state->current_view->cursor_col = state->table_view.cursor_col;
-        state->current_view->start_row = state->table_view.table_start_row;
-        state->current_view->start_col = state->table_view.table_start_col;
-    }
+    // No need to save state before switching.
 
     // Switch to the new view
     manager->current = new_view;
@@ -232,33 +208,27 @@ View* create_view_from_selection(ViewManager *manager,
     return new_view;
 }
 
-// When switching views, restore the saved cursor position for the new view.
+// When switching views, update the state to point to the new active view.
 void reset_view_state_for_new_view(ViewState *state, View *new_view) {
     if (!state || !new_view) return;
 
-    // Restore the saved cursor position for this view
-    state->table_view.cursor_row = new_view->cursor_row;
-    state->table_view.cursor_col = new_view->cursor_col;
-    state->table_view.table_start_row = new_view->start_row;
-    state->table_view.table_start_col = new_view->start_col;
-
-    // Validate the restored position
-    if (new_view->visible_row_count > 0 && state->table_view.cursor_row >= new_view->visible_row_count) {
-        state->table_view.cursor_row = new_view->visible_row_count - 1;
-    }
+    // The global state now just needs to point to the current view.
+    // All cursor, scroll, and selection state is stored on the view itself.
+    state->current_view = new_view;
     
+    // Ensure the new view is validated, e.g., cursor within bounds.
+    // This could be a separate function call if validation becomes complex.
     size_t col_count = 0;
     if (new_view->data_source && new_view->data_source->ops) {
         col_count = new_view->data_source->ops->get_col_count(new_view->data_source->context);
     }
-    if (col_count > 0 && state->table_view.cursor_col >= col_count) {
-        state->table_view.cursor_col = col_count - 1;
-    }
 
-    // Update current view pointer
-    state->current_view = new_view;
-    
-    // Note: We no longer clear selections here since they're per-view now
+    if (new_view->visible_row_count > 0 && new_view->cursor_row >= new_view->visible_row_count) {
+        new_view->cursor_row = new_view->visible_row_count - 1;
+    }
+    if (col_count > 0 && new_view->cursor_col >= col_count) {
+        new_view->cursor_col = col_count - 1;
+    }
     
     state->needs_redraw = true;
 }

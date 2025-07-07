@@ -31,16 +31,8 @@ typedef struct {
     bool needs_redraw;
     struct View *current_view; // The view whose data is being displayed
     
-    // Panel-specific state
-    struct {
-        size_t table_start_row;
-        size_t table_start_col;
-        size_t cursor_row;      // Current cursor row position in data
-        size_t cursor_col;      // Current cursor column position in data
-        // Selection state moved to per-View structure
-    } table_view;
-
-    // Future panel states can be added here
+    // Panel-specific state has been moved to the View struct
+    // to support per-view cursor positions, scroll offsets, and selections.
 } ViewState;
 
 // Global command results

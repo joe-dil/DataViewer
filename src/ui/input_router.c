@@ -21,8 +21,8 @@ static char* get_field_at_cursor(const ViewState *state) {
     }
 
     DataSource *ds = state->current_view->data_source;
-    size_t row = state->table_view.cursor_row;
-    size_t col = state->table_view.cursor_col;
+    size_t row = state->current_view->cursor_row;
+    size_t col = state->current_view->cursor_col;
 
     // Handle filtered views where visible_rows maps the display row to the data source row
     if (state->current_view->visible_rows) {
@@ -116,10 +116,10 @@ GlobalResult handle_global_input(int ch, ViewState *state) {
 
 InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *state) {
     // Track old state for change detection
-    size_t old_row = state->table_view.table_start_row;
-    size_t old_col = state->table_view.table_start_col;
-    size_t old_cursor_row = state->table_view.cursor_row;
-    size_t old_cursor_col = state->table_view.cursor_col;
+    size_t old_row = state->current_view->start_row;
+    size_t old_col = state->current_view->start_col;
+    size_t old_cursor_row = state->current_view->cursor_row;
+    size_t old_cursor_col = state->current_view->cursor_col;
     
     switch (ch) {
         case KEY_UP:
@@ -150,18 +150,18 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             if (state->current_view) {
                 char col_name[256];
                 DataSource *current_ds = state->current_view->data_source;
-                FieldDesc header_fd = current_ds->ops->get_header(current_ds->context, state->table_view.cursor_col);
+                FieldDesc header_fd = current_ds->ops->get_header(current_ds->context, state->current_view->cursor_col);
 
                 if (header_fd.start) {
                     render_field(&header_fd, col_name, sizeof(col_name));
                 } else {
-                    snprintf(col_name, sizeof(col_name), "Column %zu", state->table_view.cursor_col + 1);
+                    snprintf(col_name, sizeof(col_name), "Column %zu", state->current_view->cursor_col + 1);
                 }
                 
                 // Perform analysis
                 InMemoryTable* table = perform_frequency_analysis(viewer, 
                                                                  state->current_view, 
-                                                                 state->table_view.cursor_col);
+                                                                 state->current_view->cursor_col);
                 if (table) {
                     // Create data source for the table
                     DataSource *ds = create_memory_data_source(table);
@@ -204,14 +204,6 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                         return INPUT_CONSUMED;
                     }
                     
-                    // Save current view's cursor position before switching
-                    if (state->current_view) {
-                        state->current_view->cursor_row = state->table_view.cursor_row;
-                        state->current_view->cursor_col = state->table_view.cursor_col;
-                        state->current_view->start_row = state->table_view.table_start_row;
-                        state->current_view->start_col = state->table_view.table_start_col;
-                    }
-                    
                     // Switch to new view
                     viewer->view_manager->current = freq_view;
                     reset_view_state_for_new_view(state, freq_view);
@@ -224,7 +216,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             return INPUT_CONSUMED;
         case ' ':
             if (state->current_view) {
-                toggle_row_selection(state->current_view, state->table_view.cursor_row);
+                toggle_row_selection(state->current_view, state->current_view->cursor_row);
                 state->needs_redraw = true;
             }
             return INPUT_CONSUMED;
@@ -294,10 +286,10 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
     }
 
     // Check if state changed (viewport or cursor)
-    if (state->table_view.table_start_row != old_row || 
-        state->table_view.table_start_col != old_col ||
-        state->table_view.cursor_row != old_cursor_row ||
-        state->table_view.cursor_col != old_cursor_col) {
+    if (state->current_view->start_row != old_row || 
+        state->current_view->start_col != old_col ||
+        state->current_view->cursor_row != old_cursor_row ||
+        state->current_view->cursor_col != old_cursor_col) {
         state->needs_redraw = true;
         return INPUT_CONSUMED;
     }
