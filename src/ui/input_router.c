@@ -11,39 +11,36 @@
 #include "memory/in_memory_table.h"
 
 // Forward declarations for copy functionality
-static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cursor_col);
+static char* get_field_at_cursor(const ViewState *state);
 static void copy_to_clipboard_with_status(DSVViewer *viewer, const char *text);
 
 // Helper function to get the field value at the current cursor position
-static char* get_field_at_cursor(DSVViewer *viewer, size_t cursor_row, size_t cursor_col) {
-    if (!viewer || !viewer->file_data || !viewer->file_data->data) {
+static char* get_field_at_cursor(const ViewState *state) {
+    if (!state || !state->current_view || !state->current_view->data_source) {
         return NULL;
     }
-    
-    // Calculate actual file line (accounting for header)
-    size_t file_line = cursor_row;
-    if (viewer->display_state->show_header) {
-        file_line++; // Skip header line in file
+
+    DataSource *ds = state->current_view->data_source;
+    size_t row = state->table_view.cursor_row;
+    size_t col = state->table_view.cursor_col;
+
+    // Handle filtered views where visible_rows maps the display row to the data source row
+    if (state->current_view->visible_rows) {
+        if (row >= state->current_view->visible_row_count) {
+            return NULL;
+        }
+        row = state->current_view->visible_rows[row];
     }
-    
-    // Check bounds
-    if (file_line >= viewer->parsed_data->num_lines) {
+
+    FieldDesc fd = ds->ops->get_cell(ds->context, row, col);
+
+    if (fd.start == NULL) {
         return NULL;
     }
-    
-    // Parse the line to get fields
-    size_t num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, viewer->parsed_data->line_offsets[file_line], 
-                                  viewer->parsed_data->fields, viewer->config->max_cols);
-    
-    // Check if cursor_col is within bounds
-    if (cursor_col >= num_fields) {
-        return NULL;
-    }
-    
-    // Render the field to a static buffer
+
     static char field_buffer[DEFAULT_MAX_FIELD_LEN];
-    render_field(&viewer->parsed_data->fields[cursor_col], field_buffer, sizeof(field_buffer));
-    
+    render_field(&fd, field_buffer, sizeof(field_buffer));
+
     return field_buffer;
 }
 
@@ -151,10 +148,15 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
             break;
         case 'F': // Shift+F
             if (state->current_view) {
-                // Get current column name for view title
                 char col_name[256];
-                get_column_name(viewer, state->table_view.cursor_col, 
-                               col_name, sizeof(col_name));
+                DataSource *current_ds = state->current_view->data_source;
+                FieldDesc header_fd = current_ds->ops->get_header(current_ds->context, state->table_view.cursor_col);
+
+                if (header_fd.start) {
+                    render_field(&header_fd, col_name, sizeof(col_name));
+                } else {
+                    snprintf(col_name, sizeof(col_name), "Column %d", state->table_view.cursor_col + 1);
+                }
                 
                 // Perform analysis
                 InMemoryTable* table = perform_frequency_analysis(viewer, 
@@ -243,9 +245,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case 'y':  // Copy current cell to clipboard
             {
                 // Get the field value at cursor position
-                char *field_value = get_field_at_cursor(viewer, 
-                                                       state->table_view.cursor_row, 
-                                                       state->table_view.cursor_col);
+                char *field_value = get_field_at_cursor(state);
                 if (field_value) {
                     copy_to_clipboard_with_status(viewer, field_value);
                     // Need to redraw to show the status message

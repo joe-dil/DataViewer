@@ -29,7 +29,7 @@ void cleanup_view_manager(ViewManager *manager) {
     free(manager);
 }
 
-View* create_main_view(size_t total_rows, DataSource *data_source) {
+View* create_main_view(DataSource *data_source) {
     View *main_view = calloc(1, sizeof(View));
     if (!main_view) return NULL;
     
@@ -37,7 +37,11 @@ View* create_main_view(size_t total_rows, DataSource *data_source) {
     main_view->data_source = data_source;
     main_view->owns_data_source = false;  // Main view doesn't own file data source
     main_view->visible_rows = NULL; // Main view shows all rows
-    main_view->visible_row_count = total_rows;
+    if (data_source && data_source->ops && data_source->ops->get_row_count) {
+        main_view->visible_row_count = data_source->ops->get_row_count(data_source->context);
+    } else {
+        main_view->visible_row_count = 0;
+    }
     
     return main_view;
 }

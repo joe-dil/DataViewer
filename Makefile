@@ -28,7 +28,11 @@ LIB_OBJECTS   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
 MAIN_OBJECT   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(MAIN_SOURCE))
 DEPENDENCIES  = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(ALL_SOURCES))
 
-.PHONY: all clean test valgrind release debug
+# Default run arguments
+ARGS ?= data/real_estate.csv
+CONFIG_FILE ?= dsv_config.conf
+
+.PHONY: all clean test valgrind release debug run help
 
 # Default target is release build
 all: $(TARGET)
@@ -94,4 +98,7 @@ help:
 	@echo "  valgrind   - Run unit tests with Valgrind"
 	@echo "  help       - Show this help message"
 
-.PHONY: all clean test valgrind install-deps release debug help 
+run: all
+	./$(TARGET) $(ARGS) --config $(CONFIG_FILE)
+
+.PHONY: all clean test valgrind install-deps release debug help run 

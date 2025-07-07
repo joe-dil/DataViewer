@@ -24,11 +24,7 @@ void run_viewer(DSVViewer *viewer) {
     viewer->main_data_source = file_ds;
     
     // Create main view with data source
-    size_t total_rows = viewer->parsed_data->num_lines;
-    if (viewer->parsed_data->has_header) {
-        total_rows--; // Don't count header as data row
-    }
-    View *main_view = create_main_view(total_rows, file_ds);
+    View *main_view = create_main_view(file_ds);
     if (!main_view) {
         return; // Failed to create main view
     }

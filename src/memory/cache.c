@@ -128,9 +128,9 @@ static void cleanup_cache_allocator(struct DSVViewer *viewer) {
 
 // --- String Interning ---
 const char* intern_string(struct DSVViewer *viewer, const char* str) {
-    CHECK_NULL_RET(viewer, str);
+    CHECK_NULL_RET(viewer, NULL);
     CHECK_NULL_RET(str, NULL);
-    if (!viewer->intern_table) return str;
+    if (!viewer->intern_table) return NULL;
     
     uint32_t hash = fnv1a_hash(str);
     uint32_t index = hash % viewer->config->intern_table_size;
@@ -142,12 +142,12 @@ const char* intern_string(struct DSVViewer *viewer, const char* str) {
     }
     
     StringInternEntry *new_entry = pool_alloc_intern_entry(viewer);
-    if (!new_entry) return str; // Pool full, just return original string
+    if (!new_entry) return NULL; // Pool full, return NULL
 
     new_entry->str = pool_strdup(viewer, str);
     if (!new_entry->str) {
         // String pool full, but we already allocated the entry - that's ok since we never free individual items
-        return str; // Return original string
+        return NULL; // Return NULL
     }
 
     new_entry->next = viewer->intern_table->buckets[index];

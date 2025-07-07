@@ -15,8 +15,13 @@
 #define COLOR_PAIR_SELECTED 2
 
 // Simple helper: get column width with fallback
-static int get_column_width(DSVViewer *viewer, size_t col) {
-    return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : DEFAULT_COL_WIDTH;
+static int get_column_width(DSVViewer *viewer, const ViewState *state, size_t col) {
+    DataSource *ds = state->current_view->data_source;
+    if (ds->type == DATA_SOURCE_MEMORY) {
+        return ds->ops->get_column_width(ds->context, col);
+    } else { // DATA_SOURCE_FILE
+        return (col < viewer->display_state->num_cols) ? viewer->display_state->col_widths[col] : DEFAULT_COL_WIDTH;
+    }
 }
 
 // Simple helper: add separator if conditions are met
@@ -47,7 +52,7 @@ static void calculate_header_layout(DSVViewer *viewer, ViewState *state, size_t 
     
     // Try to fit as many columns as possible within screen width
     for (size_t col = start_col; col < layout->num_fields; col++) {
-        int col_width = get_column_width(viewer, col);
+        int col_width = get_column_width(viewer, state, col);
         int separator_space = (col < layout->num_fields - 1) ? SEPARATOR_WIDTH : 0;
         int needed_space = col_width + separator_space;
         
@@ -95,7 +100,7 @@ static int render_header_columns(DSVViewer *viewer, const ViewState* state, int 
     for (size_t col = start_col; col < layout->num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = get_column_width(viewer, col);
+        int col_width = get_column_width(viewer, state, col);
         int original_col_width = col_width;
         
         // Header truncation logic
@@ -109,7 +114,8 @@ static int render_header_columns(DSVViewer *viewer, const ViewState* state, int 
         char header_buffer[DEFAULT_MAX_FIELD_LEN];
         if (state->current_view && state->current_view->data_source) {
             DataSource *ds = state->current_view->data_source;
-            ds->ops->get_header(ds->context, col, header_buffer, sizeof(header_buffer));
+            FieldDesc fd = ds->ops->get_header(ds->context, col);
+            render_field(&fd, header_buffer, sizeof(header_buffer));
         } else {
             header_buffer[0] = '\0';
         }
@@ -196,7 +202,7 @@ static bool get_column_screen_position(DSVViewer *viewer, const ViewState *state
             return false;  // Already past screen edge
         }
         
-        int col_width = get_column_width(viewer, col);
+        int col_width = get_column_width(viewer, state, col);
         int original_col_width = col_width;
         
         // Apply same truncation logic as render_header_columns
@@ -266,7 +272,7 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
     for (size_t col = start_col; col < num_fields; col++) {
         if (x >= cols) break;
         
-        int col_width = get_column_width(viewer, col);
+        int col_width = get_column_width(viewer, state, col);
         
         char cell_buffer[DEFAULT_MAX_FIELD_LEN];
         int result = -1;
@@ -283,9 +289,15 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
                  }
                  actual_row = state->current_view->visible_rows[display_row];
              }
-
-             result = ds->ops->get_cell(
-                 ds->context, actual_row, col, cell_buffer, sizeof(cell_buffer));
+             
+             FieldDesc fd = ds->ops->get_cell(ds->context, actual_row, col);
+             if (fd.start == NULL) {
+                 result = -1;
+                 cell_buffer[0] = '\0';
+             } else {
+                render_field(&fd, cell_buffer, sizeof(cell_buffer));
+                result = strlen(cell_buffer);
+             }
         }
         
         if (result < 0) {
