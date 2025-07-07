@@ -18,7 +18,9 @@ void cleanup_view_manager(ViewManager *manager) {
     View *current = manager->views;
     while (current) {
         View *next = current->next;
-        // State is now global, so no need to clean up freq results or selections here.
+        // Cleanup selection state
+        cleanup_row_selection(current);
+        // Cleanup data source if owned
         if (current->data_source && current->owns_data_source) {
             destroy_data_source(current->data_source);
         }
@@ -42,6 +44,8 @@ View* create_main_view(DataSource *data_source) {
     } else {
         main_view->visible_row_count = 0;
     }
+    
+    // Note: Selection state is initialized separately by init_row_selection()
     
     return main_view;
 }
@@ -157,6 +161,9 @@ View* create_view_from_selection(ViewManager *manager,
 
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
+    // Initialize selection state for the new view
+    init_row_selection(new_view, count);
+
     // Insert into doubly linked list
     if (manager->current) {
         new_view->next = manager->current->next;
@@ -189,11 +196,10 @@ void reset_view_state_for_new_view(ViewState *state, View *new_view) {
     state->table_view.table_start_row = 0;
     state->table_view.table_start_col = 0;
 
-    // Update total rows to reflect the new view
-    state->table_view.total_rows = new_view->visible_row_count;
+    // Update current view pointer
+    state->current_view = new_view;
     
-    // Clear any existing selections
-    clear_all_selections(state);
+    // Note: We no longer clear selections here since they're per-view now
     
     state->needs_redraw = true;
 }

@@ -10,9 +10,7 @@
 
 void run_viewer(DSVViewer *viewer) {
     // The global viewer state is already initialized by init_viewer.
-    // We just need to set up the row selection for the main view.
-    init_row_selection(&viewer->view_state, viewer->parsed_data->num_lines);
-
+    
     // Create file data source for main view
     DataSource *file_ds = create_file_data_source(viewer);
     if (!file_ds) {
@@ -27,6 +25,18 @@ void run_viewer(DSVViewer *viewer) {
     View *main_view = create_main_view(file_ds);
     if (!main_view) {
         return; // Failed to create main view
+    }
+    
+    // Initialize row selection for the main view (handle empty files)
+    size_t total_rows = viewer->parsed_data->num_lines;
+    if (viewer->parsed_data->has_header && total_rows > 0) {
+        total_rows--;  // Don't count header in selection
+    }
+    init_row_selection(main_view, total_rows);
+    
+    // Show message if file is empty
+    if (viewer->parsed_data->num_lines == 0) {
+        set_error_message(viewer, "File is empty");
     }
 
     // Set the main view as the first and current view

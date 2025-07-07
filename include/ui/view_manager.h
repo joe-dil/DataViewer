@@ -10,6 +10,12 @@ typedef struct View {
     bool owns_data_source;        // NEW: If true, free on view cleanup
     size_t *visible_rows;         // NULL = show all rows, array = show subset
     size_t visible_row_count;     // Number of rows in this view
+    
+    // Selection state - moved from global ViewState to per-view
+    bool *row_selected;           // Bitmap for row selection in this view
+    size_t selection_count;       // Number of selected rows in this view
+    size_t total_rows;            // Total rows available for selection
+    
     struct View *next;
     struct View *prev;
 } View;

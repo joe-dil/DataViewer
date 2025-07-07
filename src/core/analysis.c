@@ -13,6 +13,7 @@
 #include <wchar.h>
 #include <sys/stat.h>
 #include <stdint.h>
+#include "logging.h"
 
 // --- Public API Functions ---
 
@@ -27,6 +28,13 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
     CHECK_NULL_RET(parsed_data, DSV_ERROR_INVALID_ARGS);
     CHECK_NULL_RET(display_state, DSV_ERROR_INVALID_ARGS);
     CHECK_NULL_RET(config, DSV_ERROR_INVALID_ARGS);
+
+    // Handle empty files
+    if (parsed_data->num_lines == 0) {
+        display_state->num_cols = 0;
+        display_state->col_widths = NULL;
+        return DSV_OK;
+    }
 
     size_t sample_lines = parsed_data->num_lines > (size_t)config->column_analysis_sample_lines ? 
                          (size_t)config->column_analysis_sample_lines : parsed_data->num_lines;
@@ -96,7 +104,7 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
 
 // Represents a single unique value and its frequency count, used for sorting internally.
 typedef struct {
-    const char *value;
+    const char *value;  // Points to string owned by hash table entries
     int count;
 } FreqValueCount;
 
@@ -104,7 +112,7 @@ typedef struct {
 
 // An entry in the frequency analysis hash table (internal to this C file)
 typedef struct FreqAnalysisEntry {
-    const char* value;
+    const char* value;  // OWNED: malloc'd string, must be freed when entry is destroyed
     int count;
     struct FreqAnalysisEntry* next;
 } FreqAnalysisEntry;
@@ -114,9 +122,8 @@ typedef struct {
     FreqAnalysisEntry** buckets;
     int size;
     int item_count;
-    struct DSVViewer *viewer; // For memory pooling
+    struct DSVViewer *viewer; // For memory pooling (currently unused)
 } FreqAnalysisHashTable;
-
 
 // Forward declaration for the comparison function
 static int compare_freq_counts(const void *a, const void *b);
@@ -135,6 +142,8 @@ const char* get_column_name(struct DSVViewer *viewer, int column_index, char* bu
 }
 
 // Create and initialize a new hash table for frequency analysis
+// OWNERSHIP: Caller owns the returned table and must call hash_table_destroy()
+// Note: Strings stored in the table must be freed separately with hash_table_free_strings()
 static FreqAnalysisHashTable* hash_table_create(struct DSVViewer *viewer, int size) {
     if (size <= 0) size = INITIAL_FREQ_TABLE_SIZE;
 
@@ -153,7 +162,26 @@ static FreqAnalysisHashTable* hash_table_create(struct DSVViewer *viewer, int si
     return table;
 }
 
+// Helper function to free all strings in the hash table
+// OWNERSHIP: Frees all malloc'd strings stored in hash table entries,
+// then frees the entries themselves. Does NOT free the table structure.
+static void hash_table_free_strings(FreqAnalysisHashTable *table) {
+    if (!table || !table->buckets) return;
+    
+    for (int i = 0; i < table->size; i++) {
+        FreqAnalysisEntry *entry = table->buckets[i];
+        while (entry) {
+            free((char*)entry->value);
+            FreqAnalysisEntry *next = entry->next;
+            free(entry);
+            entry = next;
+        }
+    }
+}
+
 // Free all memory associated with the hash table
+// OWNERSHIP: Only frees the table structure and buckets array.
+// Does NOT free the strings - caller must call hash_table_free_strings() first
 static void hash_table_destroy(FreqAnalysisHashTable *table) {
     if (!table) return;
 
@@ -194,6 +222,10 @@ static void hash_table_resize(FreqAnalysisHashTable *table) {
 }
 
 // Increment the count for a given value, or add it if it's new
+// OWNERSHIP: This function takes ownership of 'value' parameter.
+// - If the value already exists, the passed string is freed
+// - If the value is new, the string is stored in the hash table
+// - If allocation fails, the string is freed to prevent leaks
 static void hash_table_increment(FreqAnalysisHashTable *table, const char *value) {
     if (!table || !value) return;
 
@@ -204,13 +236,18 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
     for (FreqAnalysisEntry *entry = table->buckets[index]; entry; entry = entry->next) {
         if (strcmp(entry->value, value) == 0) {
             entry->count++;
+            free((char*)value);  // Free the duplicate since we found existing entry
             return;
         }
     }
 
     // Create a new entry
     FreqAnalysisEntry *new_entry = malloc(sizeof(FreqAnalysisEntry));
-    if (!new_entry) return; // Should handle memory error more gracefully
+    if (!new_entry) {
+        free((char*)value);  // Free the string on allocation failure
+        LOG_WARN("Failed to allocate memory for frequency entry");
+        return;
+    }
 
     new_entry->value = value; 
     new_entry->count = 1;
@@ -224,7 +261,24 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
     }
 }
 
-
+/**
+ * @brief Perform frequency analysis on a specific column of a view.
+ *
+ * This function analyzes the values in the given column, counts the occurrences
+ * of each unique value, and returns the results as a new in-memory table.
+ *
+ * MEMORY OWNERSHIP:
+ * - Field values are copied (strdup'd) from the data source
+ * - The hash table owns all strdup'd strings until cleanup
+ * - The returned InMemoryTable creates its own copies of strings
+ * - All intermediate allocations are cleaned up before return
+ *
+ * @param viewer The main application viewer instance.
+ * @param view The data view to analyze.
+ * @param column_index The index of the column to analyze.
+ * @return An InMemoryTable containing the frequency counts, or NULL on failure.
+ *         The caller is responsible for freeing this table with free_in_memory_table().
+ */
 InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index) {
     if (!viewer || !view || !view->data_source || column_index < 0) {
         return NULL;
@@ -270,6 +324,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
         }
         
         hash_table_increment(table, value_copy);
+        // hash_table_increment now owns value_copy - it will free it on error or if duplicate exists
     }
 
     free(field_buffer);
@@ -281,6 +336,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
 
     FreqValueCount *sorted_items = malloc(table->item_count * sizeof(FreqValueCount));
     if (!sorted_items) {
+        hash_table_free_strings(table);  // Free all strings before destroying table
         hash_table_destroy(table);
         return NULL;
     }
@@ -293,7 +349,6 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
             sorted_items[current_item].count = entry->count;
             current_item++;
             
-            FreqAnalysisEntry *to_free = entry;
             entry = entry->next;
             // Don't free the string here - we'll free it after creating the table
         }
@@ -316,6 +371,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     InMemoryTable *result_table = create_in_memory_table(table_title_buffer, 2, headers);
     if (!result_table) {
         free(sorted_items);
+        hash_table_free_strings(table);  // Free all strings before destroying table
         hash_table_destroy(table);
         return NULL;
     }
@@ -327,6 +383,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
         if (add_in_memory_table_row(result_table, row_data) != 0) {
             free(sorted_items);
             free_in_memory_table(result_table);
+            hash_table_free_strings(table);  // Free all strings before destroying table
             hash_table_destroy(table);
             return NULL;
         }
@@ -335,15 +392,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     free(sorted_items);
     
     // Now free all the strings we allocated
-    for (int i = 0; i < table->size; i++) {
-        FreqAnalysisEntry *entry = table->buckets[i];
-        while (entry) {
-            free((char*)entry->value);
-            FreqAnalysisEntry *next = entry->next;
-            free(entry);
-            entry = next;
-        }
-    }
+    hash_table_free_strings(table);
     
     hash_table_destroy(table);
 

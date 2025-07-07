@@ -217,10 +217,6 @@ void init_view_state(ViewState *state) {
     state->table_view.table_start_col = 0;
     state->table_view.cursor_row = 0;
     state->table_view.cursor_col = 0;
-    
-    // Make sure selection state is zeroed out
-    state->table_view.row_selected = NULL;
-    state->table_view.selection_count = 0;
-    state->table_view.total_rows = 0;
+    // Selection state is now handled per-View, not in ViewState
     state->current_view = NULL;
 } 

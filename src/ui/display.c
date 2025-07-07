@@ -11,8 +11,26 @@
 #include <wchar.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 #define COLOR_PAIR_SELECTED 2
+#define COLOR_PAIR_ERROR 3
+#define ERROR_MESSAGE_DURATION_MS 3000  // Show error for 3 seconds
+
+// Helper function to check if error message should still be shown
+static bool should_show_error(DSVViewer *viewer) {
+    if (!viewer || !viewer->display_state || !viewer->display_state->show_error_message) {
+        return false;
+    }
+    
+    double elapsed = get_time_ms() - viewer->display_state->error_message_time;
+    if (elapsed > ERROR_MESSAGE_DURATION_MS) {
+        viewer->display_state->show_error_message = 0;
+        return false;
+    }
+    
+    return true;
+}
 
 // Simple helper: get column width with fallback
 static int get_column_width(DSVViewer *viewer, const ViewState *state, size_t col) {
@@ -252,7 +270,7 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
     CHECK_NULL_RET(viewer, 0);
     CHECK_NULL_RET(config, 0);
 
-    bool is_selected = is_row_selected(state, display_row);
+    bool is_selected = state->current_view ? is_row_selected(state->current_view, display_row) : false;
     if (is_selected) {
         attron(COLOR_PAIR(COLOR_PAIR_SELECTED));
     }
@@ -354,6 +372,29 @@ void display_data(DSVViewer *viewer, const ViewState *state) {
 
 static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     View *current_view = state->current_view;
+    if (!current_view) return;
+    
+    // Handle empty views gracefully
+    if (current_view->visible_row_count == 0) {
+        int rows, cols;
+        getmaxyx(stdscr, rows, cols);
+        
+        // Clear screen
+        clear();
+        
+        // Show message in center of screen
+        const char *msg = "No data to display";
+        mvprintw(rows / 2, (cols - strlen(msg)) / 2, "%s", msg);
+        
+        // Still show status line
+        move(rows - 1, 0);
+        clrtoeol();
+        mvprintw(rows - 1, 0, "%s | Empty view", current_view->name);
+        
+        refresh();
+        return;
+    }
+    
     size_t start_row = state->table_view.table_start_row;
     size_t start_col = state->table_view.table_start_col;
     size_t cursor_row = state->table_view.cursor_row;
@@ -446,8 +487,14 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     move(rows - 1, 0);
     clrtoeol();
     
+    // Check if we should show error message (highest priority)
+    if (should_show_error(viewer)) {
+        attron(COLOR_PAIR(COLOR_PAIR_ERROR));
+        mvprintw(rows - 1, 0, "Error: %s", viewer->display_state->error_message);
+        attroff(COLOR_PAIR(COLOR_PAIR_ERROR));
+    }
     // Check if we should show copy status message
-    if (viewer->display_state->show_copy_status) {
+    else if (viewer->display_state->show_copy_status) {
         // Show copy status message
         mvprintw(rows - 1, 0, "%s", viewer->display_state->copy_status);
         
@@ -471,7 +518,7 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
                  first_visible,
                  last_visible,
                  total_rows_in_view,
-                 state->table_view.selection_count);
+                 current_view->selection_count);
     }
 }
 
@@ -504,4 +551,19 @@ void show_help(void) {
     mvprintw(22, HELP_INDENT_COL, "Press any key to return...");
     refresh();
     getch();
+}
+
+// Helper function to set an error message
+void set_error_message(DSVViewer *viewer, const char *format, ...) {
+    if (!viewer || !viewer->display_state) return;
+    
+    va_list args;
+    va_start(args, format);
+    vsnprintf(viewer->display_state->error_message, 
+              sizeof(viewer->display_state->error_message), format, args);
+    va_end(args);
+    
+    viewer->display_state->show_error_message = 1;
+    viewer->display_state->error_message_time = get_time_ms();
+    viewer->view_state.needs_redraw = true;
 } 

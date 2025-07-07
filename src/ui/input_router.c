@@ -155,7 +155,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 if (header_fd.start) {
                     render_field(&header_fd, col_name, sizeof(col_name));
                 } else {
-                    snprintf(col_name, sizeof(col_name), "Column %d", state->table_view.cursor_col + 1);
+                    snprintf(col_name, sizeof(col_name), "Column %zu", state->table_view.cursor_col + 1);
                 }
                 
                 // Perform analysis
@@ -167,6 +167,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     DataSource *ds = create_memory_data_source(table);
                     if (!ds) {
                         free_in_memory_table(table);
+                        set_error_message(viewer, "Failed to create data source for frequency analysis");
                         return INPUT_CONSUMED;
                     }
                     
@@ -174,6 +175,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     View *freq_view = calloc(1, sizeof(View));
                     if (!freq_view) {
                         destroy_data_source(ds);
+                        set_error_message(viewer, "Failed to allocate memory for frequency view");
                         return INPUT_CONSUMED;
                     }
                     
@@ -184,10 +186,15 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     freq_view->visible_rows = NULL;
                     freq_view->visible_row_count = ds->ops->get_row_count(ds->context);
                     
+                    // Initialize selection state for frequency view
+                    init_row_selection(freq_view, freq_view->visible_row_count);
+                    
                     // Add to view manager
                     if (!add_view_to_manager(viewer->view_manager, freq_view)) {
                         free(freq_view);
                         destroy_data_source(ds);
+                        set_error_message(viewer, "Maximum number of views reached (%zu)", 
+                                        viewer->view_manager->max_views);
                         return INPUT_CONSUMED;
                     }
                     
@@ -196,33 +203,43 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     reset_view_state_for_new_view(state, freq_view);
                     state->current_view = freq_view;
                     state->needs_redraw = true;
+                } else {
+                    set_error_message(viewer, "Frequency analysis failed - column may be empty");
                 }
             }
             return INPUT_CONSUMED;
         case ' ':
-            toggle_row_selection(state, state->table_view.cursor_row);
-            state->needs_redraw = true;
+            if (state->current_view) {
+                toggle_row_selection(state->current_view, state->table_view.cursor_row);
+                state->needs_redraw = true;
+            }
             return INPUT_CONSUMED;
         case 'A':
         case 27: // ESC key
-            if (state->table_view.selection_count > 0) {
-                clear_all_selections(state);
+            if (state->current_view && state->current_view->selection_count > 0) {
+                clear_all_selections(state->current_view);
                 state->needs_redraw = true;
             }
             // If no selection, ESC does nothing here, might be handled globally later.
             return INPUT_CONSUMED;
         case 'v':
-            if (state->table_view.selection_count > 0) {
+            if (state->current_view && state->current_view->selection_count > 0) {
                 size_t *rows = NULL;
-                size_t count = get_selected_rows(state, &rows);
+                size_t count = get_selected_rows(state->current_view, &rows);
                 if (count > 0 && state->current_view) {
-                    create_view_from_selection(viewer->view_manager, state, rows, count, state->current_view->data_source);
+                    View *new_view = create_view_from_selection(viewer->view_manager, state, rows, count, state->current_view->data_source);
+                    if (!new_view) {
+                        set_error_message(viewer, "Failed to create view - maximum views reached or out of memory");
+                    } else {
+                        // Per instructions, clear selection after creating a view
+                        clear_all_selections(state->current_view);
+                        state->needs_redraw = true;
+                    }
                     // The create function copies the rows, so we must free them here.
                     free(rows);
-                    // Per instructions, clear selection after creating a view
-                    clear_all_selections(state);
-                    state->needs_redraw = true;
                 }
+            } else {
+                set_error_message(viewer, "No rows selected - use Space to select rows");
             }
             return INPUT_CONSUMED;
         case '\t': // Tab
@@ -240,6 +257,8 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 // on the new current view. The state is fetched again at the
                 // start of the loop in app_loop.c
                 state->needs_redraw = true;
+            } else {
+                set_error_message(viewer, "Cannot close the main view");
             }
             return INPUT_CONSUMED;
         case 'y':  // Copy current cell to clipboard

@@ -157,6 +157,10 @@ void destroy_data_source(DataSource *data_source) {
 
 static size_t file_get_row_count(void *context) {
     FileDataSourceContext *ctx = (FileDataSourceContext *)context;
+    // Handle empty files
+    if (ctx->viewer->parsed_data->num_lines == 0) {
+        return 0;
+    }
     // The view is responsible for deciding whether to skip the header row,
     // so the data source should report the total number of data rows.
     size_t count = ctx->viewer->parsed_data->num_lines;
