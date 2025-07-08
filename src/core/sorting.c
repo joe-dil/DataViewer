@@ -6,6 +6,46 @@
 #include "util/logging.h"
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdbool.h>
+
+// --- Sorting Helpers ---
+
+// Helper to check if a string contains only digits (and an optional leading '-')
+static bool is_string_numeric(const char *s) {
+    if (!s || *s == '\0') return false;
+    char *endptr;
+    strtoll(s, &endptr, 10);
+    // The string is numeric if the end pointer is at the null terminator
+    return *endptr == '\0';
+}
+
+// Heuristic to check if a column is numeric by sampling its contents
+static bool is_column_numeric(View *view, int column_index) {
+    if (!view || view->visible_row_count == 0) return false;
+
+    DataSource *ds = view->data_source;
+    // Sample up to 100 rows to make a decision
+    size_t sample_size = view->visible_row_count < 100 ? view->visible_row_count : 100;
+    char buffer[4096];
+
+    for (size_t i = 0; i < sample_size; i++) {
+        size_t actual_row_index = view_get_displayed_row_index(view, i);
+        if (actual_row_index == SIZE_MAX) continue;
+
+        FieldDesc fd = ds->ops->get_cell(ds->context, actual_row_index, column_index);
+        if (fd.start == NULL || fd.length == 0) continue; // Skip empty cells
+
+        render_field(&fd, buffer, sizeof(buffer));
+        
+        if (!is_string_numeric(buffer)) {
+            return false; // Found a non-numeric value
+        }
+    }
+    
+    return true; // All sampled values were numeric
+}
+
 
 // Context structure to pass to the comparison function
 typedef struct {
@@ -13,6 +53,7 @@ typedef struct {
     char *buffer_a;
     char *buffer_b;
     size_t buffer_size;
+    bool is_numeric;
 } SortContext;
 
 #ifdef __APPLE__
@@ -40,8 +81,16 @@ static int compare_rows_apple(void *context, const void *a, const void *b) {
     FieldDesc fd_b = ds->ops->get_cell(ds->context, actual_row_b, view->sort_column);
     render_field(&fd_b, ctx->buffer_b, ctx->buffer_size);
 
-    // TODO: Add numeric comparison for numeric types
-    int result = strcmp(ctx->buffer_a, ctx->buffer_b);
+    int result;
+    if (ctx->is_numeric) {
+        long long val_a = strtoll(ctx->buffer_a, NULL, 10);
+        long long val_b = strtoll(ctx->buffer_b, NULL, 10);
+        if (val_a < val_b) result = -1;
+        else if (val_a > val_b) result = 1;
+        else result = 0;
+    } else {
+        result = strcmp(ctx->buffer_a, ctx->buffer_b);
+    }
 
     if (view->sort_direction == SORT_DESC) {
         return -result;
@@ -73,8 +122,16 @@ static int compare_rows(const void *a, const void *b, void *context) {
     FieldDesc fd_b = ds->ops->get_cell(ds->context, actual_row_b, view->sort_column);
     render_field(&fd_b, ctx->buffer_b, ctx->buffer_size);
 
-    // TODO: Add numeric comparison for numeric types
-    int result = strcmp(ctx->buffer_a, ctx->buffer_b);
+    int result;
+    if (ctx->is_numeric) {
+        long long val_a = strtoll(ctx->buffer_a, NULL, 10);
+        long long val_b = strtoll(ctx->buffer_b, NULL, 10);
+        if (val_a < val_b) result = -1;
+        else if (val_a > val_b) result = 1;
+        else result = 0;
+    } else {
+        result = strcmp(ctx->buffer_a, ctx->buffer_b);
+    }
 
     if (view->sort_direction == SORT_DESC) {
         return -result;
@@ -111,6 +168,7 @@ void sort_view(View *view) {
     // Prepare context for the comparison function
     SortContext context;
     context.view = view;
+    context.is_numeric = is_column_numeric(view, view->sort_column);
     // These buffers are used to avoid repeated mallocs inside the comparator
     context.buffer_size = 4096; // A reasonable max field size for comparison
     context.buffer_a = malloc(context.buffer_size);

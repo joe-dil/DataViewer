@@ -494,27 +494,32 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
         // Show copy status message
         mvprintw(rows - 1, 0, "%s", viewer->display_state->copy_status);
         
-        // Clear the flag after showing (it will be shown once)
+        // After showing, reset flag
         viewer->display_state->show_copy_status = 0;
-    } else {
-        View *current_view = state->current_view;
-        size_t total_rows_in_view = current_view->visible_row_count;
-        size_t display_cursor_row = cursor_row + 1;
-
-        size_t first_visible = start_row + 1;
-        size_t last_visible = start_row + display_rows - screen_start_row;
-        if (last_visible > total_rows_in_view) {
-            last_visible = total_rows_in_view;
-        }
-
-        // Show view info and normal status line
-        mvprintw(rows - 1, 0, "%s | Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu | sel: %zu",
+    }
+    else {
+        // Build the status line string
+        char status_buffer[cols + 1];
+        size_t viewing_end = start_row + display_rows > current_view->visible_row_count ? current_view->visible_row_count : start_row + display_rows;
+        snprintf(status_buffer, sizeof(status_buffer), 
+                 "%s | Cursor: (%zu,%zu) | Viewing: %zu-%zu of %zu | sel: %zu",
                  current_view->name,
-                 display_cursor_row, cursor_col + 1,
-                 first_visible,
-                 last_visible,
-                 total_rows_in_view,
+                 cursor_row + 1, cursor_col + 1,
+                 start_row + 1, viewing_end, current_view->visible_row_count,
                  current_view->selection_count);
+        
+        // Append sort status if applicable
+        if (current_view->sort_direction != SORT_NONE) {
+            char sort_col_name[256];
+            char temp_buffer[256]; // Buffer for get_column_name
+            get_column_name(viewer, current_view->sort_column, temp_buffer, sizeof(temp_buffer));
+            snprintf(sort_col_name, sizeof(sort_col_name), " | Sorted by: %s (%s)",
+                     temp_buffer,
+                     current_view->sort_direction == SORT_ASC ? "ASC" : "DESC");
+            strncat(status_buffer, sort_col_name, sizeof(status_buffer) - strlen(status_buffer) - 1);
+        }
+        
+        mvprintw(rows - 1, 0, "%s", status_buffer);
     }
 }
 
