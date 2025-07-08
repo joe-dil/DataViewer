@@ -36,7 +36,7 @@ typedef struct View {
     int sort_column;              // Column index for sorting, -1 if not sorted
     SortDirection sort_direction; // Direction of the sort
     size_t *row_order_map;        // Maps displayed row to an index in the visible set
-
+    
     // Selection state - moved from global ViewState to per-view
     bool *row_selected;           // Bitmap for row selection in this view
     size_t selection_count;       // Number of selected rows in this view
@@ -50,7 +50,7 @@ typedef struct View {
     
     // Deprecated fields, to be removed
     size_t *visible_rows;         // Use ranges instead
-
+    
     struct View *next;
     struct View *prev;
 } View;

@@ -38,7 +38,7 @@ static int calculate_single_column_width(DSVViewer *viewer, int column_index) {
                          ? (size_t)config->column_analysis_sample_lines : parsed_data->num_lines;
     
     int max_width = 0;
-
+    
     // Reuse the existing fields buffer instead of allocating new one
     FieldDesc* analysis_fields = parsed_data->fields;
     if (!analysis_fields) {
@@ -57,7 +57,7 @@ static int calculate_single_column_width(DSVViewer *viewer, int column_index) {
 
         if ((size_t)column_index < num_fields) {
             if (max_width >= config->max_column_width) break;
-
+            
             char temp_buffer[config->max_field_len];
             render_field(&analysis_fields[column_index], temp_buffer, config->max_field_len);
             int width = strlen(temp_buffer);
@@ -87,7 +87,7 @@ int analysis_get_column_width(struct DSVViewer *viewer, int column_index) {
     }
 
     return viewer->display_state->col_widths[column_index];
-}
+} 
 
 // --- Frequency Analysis ---
 
@@ -208,16 +208,16 @@ static void hash_table_destroy(FreqAnalysisHashTable *table) {
 
     // Free the linked lists of entries in each bucket
     if (table->buckets) {
-        for (int i = 0; i < table->size; i++) {
-            FreqAnalysisEntry *entry = table->buckets[i];
-            while (entry) {
-                FreqAnalysisEntry *next = entry->next;
+    for (int i = 0; i < table->size; i++) {
+        FreqAnalysisEntry *entry = table->buckets[i];
+        while (entry) {
+            FreqAnalysisEntry *next = entry->next;
                 free((char*)entry->value); // Free the strdup'd string
-                free(entry);
-                entry = next;
-            }
+            free(entry);
+            entry = next;
         }
     }
+}
 
     // Free the buckets array and the table structure itself
     free(table->buckets);
@@ -283,7 +283,7 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
         return;
     }
 
-    new_entry->value = value;
+    new_entry->value = value; 
     new_entry->count = 1;
     new_entry->next = table->buckets[index];
     table->buckets[index] = new_entry;

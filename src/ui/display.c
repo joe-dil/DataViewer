@@ -471,11 +471,27 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
             // Apply special highlighting to header column that preserves underline
             apply_header_column_highlight(col_x, col_width);
             
-            // Apply regular highlighting to data rows
-            apply_column_highlight(col_x, col_width, 1, display_rows);
+            // Calculate the last row that actually has data
+            size_t remaining_data_rows = (current_view->visible_row_count > start_row) ? 
+                                        current_view->visible_row_count - start_row : 0;
+            int data_end_row = screen_start_row + (int)remaining_data_rows;
+            if (data_end_row > display_rows) {
+                data_end_row = display_rows;
+            }
+            
+            // Apply regular highlighting only to data rows
+            apply_column_highlight(col_x, col_width, 1, data_end_row);
         } else {
-            // No header, highlight all rows
-            apply_column_highlight(col_x, col_width, 0, display_rows);
+            // No header - calculate data end row from row 0
+            size_t remaining_data_rows = (current_view->visible_row_count > start_row) ? 
+                                        current_view->visible_row_count - start_row : 0;
+            int data_end_row = (int)remaining_data_rows;
+            if (data_end_row > display_rows) {
+                data_end_row = display_rows;
+            }
+            
+            // Apply highlighting only to rows with data
+            apply_column_highlight(col_x, col_width, 0, data_end_row);
         }
     }
     
