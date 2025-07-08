@@ -6,6 +6,9 @@
 #include <locale.h>
 #include <stdbool.h>
 
+// Forward declaration
+struct DSVViewer;
+
 // Constants for default separator strings
 #define ASCII_SEPARATOR " | "
 #define UNICODE_SEPARATOR " │ "
@@ -50,6 +53,20 @@ typedef struct {
     int needs_redraw;
     char copy_status[256];
     int show_copy_status;
+    
+    // Error message display
+    char error_message[256];
+    double error_message_time;
+    int show_error_message; // Use as a boolean
+
+    // Status message state
+    char status_message[256];
+    double status_message_time;
+    int show_status_message; // Use as a boolean
 } DisplayState;
+
+// Error message display function
+void set_error_message(struct DSVViewer *viewer, const char *format, ...);
+void set_status_message(struct DSVViewer *viewer, const char *format, ...);
 
 #endif // DISPLAY_STATE_H 

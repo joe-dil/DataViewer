@@ -3,9 +3,12 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include "analysis.h"
+#include "memory/in_memory_table.h"
 
 // Forward declaration to avoid circular dependencies
 struct DSVViewer;
+struct View;
 
 // Input handling result - tells the main loop what to do next
 typedef enum {
@@ -18,23 +21,28 @@ typedef enum {
 typedef enum {
     PANEL_TABLE_VIEW,
     PANEL_HELP,
+    PANEL_FREQ_ANALYSIS,
     // Future: PANEL_COLUMN_STATS, PANEL_ROW_DETAILS
 } PanelType;
+
+// Different modes for user input
+typedef enum {
+    INPUT_MODE_NORMAL,   // Navigating the table
+    INPUT_MODE_SEARCH,   // Typing a search query
+    // Future: INPUT_MODE_COMMAND
+} InputMode;
 
 // View state that tracks current panel and redraw needs
 typedef struct {
     PanelType current_panel;
+    InputMode input_mode;
+    char search_term[256];
+    char search_message[256];
     bool needs_redraw;
+    struct View *current_view; // The view whose data is being displayed
     
-    // Panel-specific state
-    struct {
-        size_t table_start_row;
-        size_t table_start_col;
-        size_t cursor_row;      // Current cursor row position in data
-        size_t cursor_col;      // Current cursor column position in data
-    } table_view;
-    
-    // Future panel states can be added here
+    // Panel-specific state has been moved to the View struct
+    // to support per-view cursor positions, scroll offsets, and selections.
 } ViewState;
 
 // Global command results

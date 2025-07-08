@@ -168,6 +168,8 @@ DSVResult config_load_from_file(DSVConfig *config, const char *filename) {
 DSVResult config_validate(const DSVConfig *config) {
     if (!config) return DSV_ERROR_INVALID_ARGS;
     
+    LOG_INFO("Validating configuration with cache_string_pool_size = %zu bytes.", config->cache_string_pool_size);
+
     // Use separate macros for int and size_t validation to avoid unsigned comparison errors
     #define VALIDATE_POSITIVE_INT(name) \
         if (config->name <= 0) { \

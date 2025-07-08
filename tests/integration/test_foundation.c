@@ -139,7 +139,7 @@ void test_viewer_init_with_empty_file() {
     DSVResult result = init_viewer(&viewer, "empty.csv", 0, &config);
     
     ASSERT_EQ(result, DSV_OK); // Empty files should be handled gracefully
-    ASSERT_EQ(viewer.parsed_data->num_lines, 1); // Should have at least one line
+    ASSERT_EQ(viewer.parsed_data->num_lines, 0); // An empty file has zero lines.
     
     cleanup_viewer(&viewer);
     unlink("empty.csv");

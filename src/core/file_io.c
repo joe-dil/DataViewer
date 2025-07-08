@@ -28,16 +28,8 @@ static DSVResult validate_file_bounds(struct DSVViewer *viewer) {
     CHECK_NULL_RET(viewer, DSV_ERROR_INVALID_ARGS);
     CHECK_NULL_RET(viewer->parsed_data, DSV_ERROR_INVALID_ARGS);
     
-    // CRITICAL: Prevent SIZE_MAX assignment when num_lines == 0
-    if (viewer->parsed_data->num_lines == 0) {
-        // Create minimal valid state instead of underflow
-        viewer->parsed_data->num_lines = 1;
-        viewer->parsed_data->line_offsets = malloc(sizeof(size_t));
-        CHECK_ALLOC(viewer->parsed_data->line_offsets);
-        viewer->parsed_data->line_offsets[0] = 0;
-        return DSV_OK; // Signal empty file handled
-    }
-    return DSV_OK; // Normal file
+    // Empty files are valid - no need for fake data
+    return DSV_OK;
 }
 
 static DSVResult handle_empty_file(struct DSVViewer *viewer) {
@@ -45,12 +37,13 @@ static DSVResult handle_empty_file(struct DSVViewer *viewer) {
     CHECK_NULL_RET(viewer->file_data, DSV_ERROR_INVALID_ARGS);
     
     if (viewer->file_data->length == 0) {
-        // Set up minimal valid state for empty files
-        viewer->parsed_data->num_lines = 1;
-        viewer->parsed_data->line_offsets = malloc(sizeof(size_t));
-        CHECK_ALLOC(viewer->parsed_data->line_offsets);
-        viewer->parsed_data->line_offsets[0] = 0;
+        // Set up valid state for empty files - no fake lines
+        viewer->parsed_data->num_lines = 0;
+        viewer->parsed_data->line_offsets = NULL;
         viewer->parsed_data->delimiter = ','; // Default delimiter
+        viewer->parsed_data->has_header = 0;
+        viewer->parsed_data->num_header_fields = 0;
+        viewer->parsed_data->header_fields = NULL;
         return DSV_OK;
     }
     return DSV_ERROR; // Not empty - caller should continue processing
@@ -206,6 +199,40 @@ DSVResult scan_file_data(struct DSVViewer *viewer, const DSVConfig *config) {
             viewer->parsed_data->line_offsets[viewer->parsed_data->num_lines++] = next_line_offset;
         }
         search_start = newline + 1;
+    }
+
+    if (viewer->parsed_data->num_lines > 0) {
+        viewer->parsed_data->has_header = 1; // Assume header for now
+        
+        // Let's find the number of columns in the header
+        FieldDesc* temp_fields = malloc(viewer->config->max_cols * sizeof(FieldDesc));
+        if(temp_fields) {
+            size_t header_num_fields = parse_line(viewer->file_data->data, viewer->file_data->length, viewer->parsed_data->delimiter, 0, temp_fields, viewer->config->max_cols);
+            
+            viewer->parsed_data->num_header_fields = header_num_fields;
+            viewer->parsed_data->header_fields = malloc(header_num_fields * sizeof(FieldDesc));
+            if(viewer->parsed_data->header_fields) {
+                memcpy(viewer->parsed_data->header_fields, temp_fields, header_num_fields * sizeof(FieldDesc));
+            }
+            free(temp_fields);
+
+            // Initialize display state for lazy column width calculation
+            viewer->display_state->num_cols = header_num_fields;
+            viewer->display_state->col_widths = malloc(header_num_fields * sizeof(int));
+            if (viewer->display_state->col_widths) {
+                for (size_t i = 0; i < header_num_fields; i++) {
+                    viewer->display_state->col_widths[i] = -1; // Sentinel for not-yet-calculated
+                }
+            } else {
+                LOG_ERROR("Failed to allocate for column widths");
+                return DSV_ERROR_MEMORY;
+            }
+        }
+    } else {
+        viewer->parsed_data->has_header = 0;
+        viewer->parsed_data->num_header_fields = 0;
+        viewer->display_state->num_cols = 0;
+        viewer->display_state->col_widths = NULL;
     }
     
     // Final memory and bounds checks

@@ -1,3 +1,4 @@
+#include "core/parser.h"
 #include "app_init.h"
 #include "display_state.h"
 #include <wchar.h>

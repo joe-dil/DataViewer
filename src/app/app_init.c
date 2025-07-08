@@ -7,6 +7,8 @@
 #include "logging.h"
 #include "error_context.h"
 #include "buffer_pool.h"
+#include "view_manager.h"
+#include "core/data_source.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -50,6 +52,17 @@ static DSVResult init_viewer_components(struct DSVViewer *viewer, const DSVConfi
         viewer->display_state = NULL;
         return DSV_ERROR_MEMORY;
     }
+
+    viewer->view_manager = init_view_manager();
+    if (!viewer->view_manager) {
+        LOG_ERROR("Failed to initialize ViewManager");
+        free(viewer->parsed_data);
+        free(viewer->file_data);
+        cleanup_buffer_pool(&viewer->display_state->buffers);
+        free(viewer->display_state);
+        return DSV_ERROR_MEMORY;
+    }
+
     return DSV_OK;
 }
 
@@ -64,6 +77,8 @@ static void cleanup_viewer_resources(struct DSVViewer *viewer) {
 void cleanup_viewer(DSVViewer *viewer) {
     if (!viewer) return;
 
+    destroy_data_source(viewer->main_data_source);
+    cleanup_view_manager(viewer->view_manager);
     cleanup_file_data(viewer); // from file_io.h
     cleanup_cache_system(viewer); // from cache.h
     cleanup_viewer_resources(viewer);
@@ -116,7 +131,7 @@ static DSVResult init_file_system(DSVViewer *viewer, const char *filename) {
         return DSV_ERROR_FILE_IO;
     }
     
-    printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("File operations: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -137,7 +152,7 @@ static DSVResult init_analysis_system(DSVViewer *viewer, char delimiter) {
         return DSV_ERROR_PARSE;
     }
     
-    printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("Data structures: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -148,15 +163,15 @@ static DSVResult init_display_system(DSVViewer *viewer) {
     
     double phase_time = get_time_ms();
     
-    if (analyze_column_widths(viewer->file_data, viewer->parsed_data, viewer->display_state, viewer->config) != DSV_OK) {
-        LOG_ERROR("Failed to analyze columns.");
-        return DSV_ERROR_DISPLAY;
-    }
+    // if (analyze_column_widths(viewer->file_data, viewer->parsed_data, viewer->display_state, viewer->config) != DSV_OK) {
+    //     LOG_ERROR("Failed to analyze columns.");
+    //     return DSV_ERROR_DISPLAY;
+    // }
     
     configure_viewer_settings(viewer, viewer->config);
     initialize_viewer_cache(viewer, viewer->config);
     
-    printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("Display features: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -175,7 +190,8 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     phase_time = get_time_ms();
     res = init_viewer_components(viewer, config);
     if (res != DSV_OK) return res;
-    printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
+    init_view_state(&viewer->view_state); // Initialize the global view state
+    LOG_DEBUG("Core components: %.2f ms", get_time_ms() - phase_time);
 
     // File operations
     res = init_file_system(viewer, filename);
@@ -189,7 +205,17 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     res = init_display_system(viewer);
     if (res != DSV_OK) return res;
 
-    printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
+    LOG_INFO("Total initialization: %.2f ms", get_time_ms() - total_time);
     LOG_INFO("Viewer initialized successfully.");
     return DSV_OK;
+}
+
+void init_view_state(ViewState *state) {
+    state->current_panel = PANEL_TABLE_VIEW;
+    state->input_mode = INPUT_MODE_NORMAL;
+    state->search_term[0] = '\0';
+    state->search_message[0] = '\0';
+    state->needs_redraw = true;
+    // Selection state is now handled per-View, not in ViewState
+    state->current_view = NULL;
 } 

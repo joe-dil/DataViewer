@@ -16,7 +16,7 @@ SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
 DEPDIR = deps
-TARGET = $(BINDIR)/dv
+TARGET = bin/dv
 
 # Source files discovery
 ALL_SOURCES   = $(shell find $(SRCDIR) -name '*.c')
@@ -28,10 +28,14 @@ LIB_OBJECTS   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))
 MAIN_OBJECT   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(MAIN_SOURCE))
 DEPENDENCIES  = $(patsubst $(SRCDIR)/%.c,$(DEPDIR)/%.d,$(ALL_SOURCES))
 
-.PHONY: all clean test valgrind release debug
+# Default run arguments
+ARGS ?= data/real_estate.csv
+CONFIG_FILE ?= dsv_config.conf
+
+.PHONY: all clean test valgrind release debug run help
 
 # Default target is release build
-all: release
+all: $(TARGET)
 
 # Release build (optimized)
 release: CFLAGS = $(CFLAGS_RELEASE)
@@ -42,6 +46,7 @@ debug: CFLAGS = $(CFLAGS_DEBUG)
 debug: LIBS += -fsanitize=address
 debug: $(TARGET)
 
+# Main application binary
 $(TARGET): $(MAIN_OBJECT) $(LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $(TARGET) $(LIBS)
@@ -55,7 +60,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 -include $(DEPENDENCIES)
 
 clean:
-	@rm -rf $(OBJDIR) $(BINDIR) $(DEPDIR)
+	@rm -rf $(OBJDIR) $(TARGET) $(DEPDIR)
 
 test:
 	@echo "Running tests..."
@@ -93,4 +98,7 @@ help:
 	@echo "  valgrind   - Run unit tests with Valgrind"
 	@echo "  help       - Show this help message"
 
-.PHONY: all clean test valgrind install-deps release debug help 
+run: all
+	./$(TARGET) $(ARGS) --config $(CONFIG_FILE)
+
+.PHONY: all clean test valgrind install-deps release debug help run 

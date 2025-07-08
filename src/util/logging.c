@@ -1,90 +1,49 @@
-#include "constants.h"
-#include "logging.h"
+#include <stdio.h>
 #include <time.h>
+#include <stdarg.h>
 #include <string.h>
+#include "logging.h"
 
-// --- Color Codes for Terminal Output ---
-#define LOG_COLOR_RED     "\x1b[31m"
-#define LOG_COLOR_YELLOW  "\x1b[33m"
-#define LOG_COLOR_BLUE    "\x1b[34m"
-#define LOG_COLOR_GRAY    "\x1b[90m"
-#define LOG_COLOR_RESET   "\x1b[0m"
+static FILE* log_file = NULL;
 
-// --- Global State ---
-static LogLevel g_current_log_level = LOG_LEVEL_INFO;
-static FILE* g_log_output = NULL;
-
-// --- Internal Helper ---
-static const char* level_to_string(LogLevel level) {
-    switch (level) {
-        case LOG_LEVEL_ERROR: return "ERROR";
-        case LOG_LEVEL_WARN:  return "WARN";
-        case LOG_LEVEL_INFO:  return "INFO";
-        case LOG_LEVEL_DEBUG: return "DEBUG";
-    }
-    return "UNKNOWN";
-}
-
-static const char* level_to_color(LogLevel level) {
-    switch (level) {
-        case LOG_LEVEL_ERROR: return LOG_COLOR_RED;
-        case LOG_LEVEL_WARN:  return LOG_COLOR_YELLOW;
-        case LOG_LEVEL_INFO:  return LOG_COLOR_BLUE;
-        case LOG_LEVEL_DEBUG: return LOG_COLOR_GRAY;
-    }
-    return LOG_COLOR_RESET;
-}
-
-// --- Public Function Implementations ---
-
-void init_logging(LogLevel level, const char* log_file) {
-    g_current_log_level = level;
-    if (log_file && strcmp(log_file, "-") != 0) {
-        g_log_output = fopen(log_file, "a");
-        if (!g_log_output) {
-            perror("Failed to open log file");
-            g_log_output = stderr;
-        }
-    } else {
-        g_log_output = stderr;
+void logging_init(void) {
+    log_file = fopen("dsv_debug.log", "w");
+    if (log_file) {
+        // Redirect stderr to the log file. This will capture all LOG_* macros.
+        dup2(fileno(log_file), STDERR_FILENO);
+        setvbuf(stderr, NULL, _IOLBF, 0); // Line-buffer stderr
     }
 }
 
-void log_message(LogLevel level, const char* file, int line, const char* fmt, ...) {
-    if (level > g_current_log_level || !g_log_output) {
+void log_message(LogLevel level, const char *file, int line, const char *format, ...) {
+    if (level > LOG_LEVEL || !log_file) {
         return;
     }
 
-    // Timestamp
-    time_t timer;
-    char time_buffer[LOG_TIME_BUFFER_SIZE];
-    const struct tm* tm_info;
-    time(&timer);
-    tm_info = localtime(&timer);
-    strftime(time_buffer, LOG_TIME_BUFFER_SIZE, "%Y-%m-%d %H:%M:%S", tm_info);
+    // Get current time
+    time_t now = time(0);
+    struct tm *local_time = localtime(&now);
+    char time_buf[20];
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", local_time);
 
-    // Terminal colors
-    const char* color_str = "";
-    const char* reset_str = "";
-    if (g_log_output == stderr) {
-        color_str = level_to_color(level);
-        reset_str = LOG_COLOR_RESET;
+    // Format log message prefix
+    const char *level_str = "";
+    switch (level) {
+        case LOG_LEVEL_DEBUG: level_str = "DEBUG"; break;
+        case LOG_LEVEL_INFO:  level_str = "INFO "; break;
+        case LOG_LEVEL_WARN:  level_str = "WARN "; break;
+        case LOG_LEVEL_ERROR: level_str = "ERROR"; break;
     }
-    
-    // Log prefix
-    fprintf(g_log_output, "%s %s%-5s%s ", time_buffer, color_str, level_to_string(level), reset_str);
 
-    // Message
+    fprintf(stderr, "%s %s ", time_buf, level_str);
+    
+    // Print the actual log message
     va_list args;
-    va_start(args, fmt);
-    vfprintf(g_log_output, fmt, args);
+    va_start(args, format);
+    vfprintf(stderr, format, args);
     va_end(args);
 
-    // Source location
-    if (level <= LOG_LEVEL_WARN) {
-        fprintf(g_log_output, " %s(%s:%d)%s", LOG_COLOR_GRAY, file, line, reset_str);
-    }
-
-    fprintf(g_log_output, "\n");
-    fflush(g_log_output);
+    // Print source location
+    fprintf(stderr, " (%s:%d)\n", file, line);
+    fflush(stderr);
 } 

@@ -34,3 +34,13 @@ gmon.out
 
 # Build system
 deps/
+
+# Test-specific
+test_data.csv
+*.prof
+*.out
+*.gcno
+*.gcda
+*.gcov
+
+dsv_debug.log

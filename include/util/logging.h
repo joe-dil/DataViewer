@@ -3,6 +3,12 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <unistd.h>
+
+// Default log level - can be overridden by build flags
+#ifndef LOG_LEVEL
+#define LOG_LEVEL LOG_LEVEL_INFO
+#endif
 
 // --- Log Levels ---
 typedef enum {
@@ -21,5 +27,10 @@ typedef enum {
 // --- Public Function Declarations ---
 void init_logging(LogLevel level, const char* log_file);
 void log_message(LogLevel level, const char* file, int line, const char* fmt, ...);
+
+// --- Function Declarations ---
+
+void logging_init(void);
+void log_message(LogLevel level, const char *file, int line, const char *format, ...);
 
 #endif // LOGGING_H 

@@ -11,14 +11,12 @@
 #include <wchar.h>
 
 // --- Static Helper Declarations ---
-static uint32_t fnv1a_hash(const char *str);
 static DSVResult init_display_cache(struct DSVViewer *viewer);
 static void cleanup_display_cache(struct DSVViewer *viewer);
 static DSVResult init_cache_allocator(struct DSVViewer *viewer);
 static void cleanup_cache_allocator(struct DSVViewer *viewer);
 static DSVResult init_string_intern_table(struct DSVViewer *viewer);
 static void cleanup_string_intern_table(struct DSVViewer *viewer);
-static const char* intern_string(struct DSVViewer *viewer, const char* str);
 static char* pool_strdup(struct DSVViewer *viewer, const char* str);
 static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer);
 static TruncatedString* pool_alloc_truncated_array(struct DSVViewer *viewer, int count);
@@ -29,18 +27,6 @@ static DisplayCacheEntry* find_cache_entry(struct DSVViewer *viewer, const char*
 static const char* find_truncated_version(DisplayCacheEntry *entry, int width);
 static const char* add_truncated_version(struct DSVViewer *viewer, DisplayCacheEntry *entry, const char* original, int width);
 static DisplayCacheEntry* create_cache_entry(struct DSVViewer *viewer, const char* original, uint32_t hash, int width);
-
-// --- Hashing ---
-// FNV-1a hash function - fast and well-distributed for string keys
-static uint32_t fnv1a_hash(const char *str) {
-    CHECK_NULL_RET(str, 0);
-    uint32_t hash = FNV_OFFSET_BASIS;
-    for (const char *p = str; *p; p++) {
-        hash ^= (uint8_t)(*p);
-        hash *= FNV_PRIME;
-    }
-    return hash;
-}
 
 // --- Cache Allocator Management ---
 static DisplayCacheEntry* pool_alloc_entry(struct DSVViewer *viewer) {
@@ -141,10 +127,10 @@ static void cleanup_cache_allocator(struct DSVViewer *viewer) {
 }
 
 // --- String Interning ---
-static const char* intern_string(struct DSVViewer *viewer, const char* str) {
-    CHECK_NULL_RET(viewer, str);
+const char* intern_string(struct DSVViewer *viewer, const char* str) {
+    CHECK_NULL_RET(viewer, NULL);
     CHECK_NULL_RET(str, NULL);
-    if (!viewer->intern_table) return str;
+    if (!viewer->intern_table) return NULL;
     
     uint32_t hash = fnv1a_hash(str);
     uint32_t index = hash % viewer->config->intern_table_size;
@@ -156,12 +142,12 @@ static const char* intern_string(struct DSVViewer *viewer, const char* str) {
     }
     
     StringInternEntry *new_entry = pool_alloc_intern_entry(viewer);
-    if (!new_entry) return str; // Pool full, just return original string
+    if (!new_entry) return NULL; // Pool full, return NULL
 
     new_entry->str = pool_strdup(viewer, str);
     if (!new_entry->str) {
         // String pool full, but we already allocated the entry - that's ok since we never free individual items
-        return str; // Return original string
+        return NULL; // Return NULL
     }
 
     new_entry->next = viewer->intern_table->buckets[index];
