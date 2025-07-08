@@ -29,32 +29,41 @@ typedef struct {
 
 // --- Sorting Helpers ---
 
-// Heuristic to check if a column is numeric by sampling its contents
+// Checks if a column is numeric by inspecting all of its visible rows.
 static bool is_column_numeric(View *view, int column_index) {
     if (!view || view->visible_row_count == 0) return false;
 
     DataSource *ds = view->data_source;
-    // Sample up to 100 rows to make a decision
-    size_t sample_size = view->visible_row_count < 100 ? view->visible_row_count : 100;
+    // Check every visible row to make an accurate decision.
+    size_t num_rows_to_check = view->visible_row_count;
     char buffer[4096];
 
-    for (size_t i = 0; i < sample_size; i++) {
-        size_t actual_row_index = view_get_displayed_row_index(view, i);
+    for (size_t i = 0; i < num_rows_to_check; i++) {
+        // We must check the actual row from the source, not the displayed/sorted one.
+        size_t actual_row_index = view_get_actual_row_index(view, i);
         if (actual_row_index == SIZE_MAX) continue;
 
         FieldDesc fd = ds->ops->get_cell(ds->context, actual_row_index, column_index);
-        if (fd.start == NULL || fd.length == 0) continue; // Skip empty cells
+        
+        // Treat empty cells as neutral; they don't disqualify a numeric column.
+        if (fd.start == NULL || fd.length == 0) continue;
 
         render_field(&fd, buffer, sizeof(buffer));
         
+        // If we find any value that isn't purely numeric (ignoring whitespace),
+        // the entire column is treated as text.
         if (!is_string_numeric(buffer)) {
-            return false; // Found a non-numeric value
+            return false;
         }
     }
     
-    return true; // All sampled values were numeric
+    // All checked values were numeric.
+    return true;
 }
 
+
+// Global variable to hold the current sort direction for qsort_r emulation
+static SortDirection g_current_sort_direction = SORT_ASC;
 
 // Unified comparison function for qsort
 static int compare_decorated_rows(const void *a, const void *b) {
@@ -69,12 +78,10 @@ static int compare_decorated_rows(const void *a, const void *b) {
             result = -1;
         } else if (row_a->key.numeric_key > row_b->key.numeric_key) {
             result = 1;
-        } else {
-            result = 0;
         }
     } else {
-        // String comparison
-        result = strcmp(row_a->key.string_key, row_b->key.string_key);
+        // Case-insensitive string comparison
+        result = strcasecmp(row_a->key.string_key, row_b->key.string_key);
     }
     
     // If primary keys are equal, use original_index as stable tie-breaker
@@ -84,6 +91,11 @@ static int compare_decorated_rows(const void *a, const void *b) {
         } else if (row_a->original_index > row_b->original_index) {
             result = 1;
         }
+    }
+    
+    // Adjust for descending sort direction
+    if (g_current_sort_direction == SORT_DESC) {
+        result = -result;
     }
     
     return result;
@@ -114,7 +126,7 @@ bool is_column_sorted(View *view, int column_index, SortDirection direction) {
             else if (val_a > val_b) comparison_result = 1;
             else comparison_result = 0;
         } else {
-            comparison_result = strcmp(buffer_a, buffer_b);
+            comparison_result = strcasecmp(buffer_a, buffer_b);
         }
 
         if (direction == SORT_ASC && comparison_result > 0) return false;
@@ -141,13 +153,14 @@ void sort_view(View *view) {
             view->sort_direction = SORT_ASC;
         }
     } else {
-        // New column being sorted, default to ASC
-        view->sort_direction = SORT_ASC;
+        // New column being sorted. If no direction is specified, default to ASC.
+        if (view->sort_direction == SORT_NONE) {
+            view->sort_direction = SORT_ASC;
+        }
     }
 
-    view->last_sorted_column = view->sort_column; // Update last sorted column
+    view->last_sorted_column = view->sort_column;
 
-    // If sorting is turned off, free the map and return
     if (view->sort_direction == SORT_NONE) {
         SAFE_FREE(view->row_order_map);
         return;
@@ -156,8 +169,6 @@ void sort_view(View *view) {
     if (view->visible_row_count == 0) return;
 
     // --- 1. DECORATE ---
-    // Create an array of decorated rows with pre-computed sort keys.
-
     DecoratedRow *decorated_rows = malloc(view->visible_row_count * sizeof(DecoratedRow));
     if (!decorated_rows) {
         LOG_ERROR("Failed to allocate for decorated rows.");
@@ -165,21 +176,6 @@ void sort_view(View *view) {
     }
 
     bool is_numeric = is_column_numeric(view, view->sort_column);
-    char *string_key_arena = NULL;
-    size_t arena_offset = 0;
-
-    if (!is_numeric) {
-        // Pre-allocate a single large block for all string keys for performance
-        // Average 32 bytes per key as a heuristic.
-        size_t arena_size = view->visible_row_count * 32;
-        string_key_arena = malloc(arena_size);
-        if (!string_key_arena) {
-            LOG_ERROR("Failed to allocate string arena for sorting.");
-            free(decorated_rows);
-            return;
-        }
-    }
-    
     char render_buffer[4096];
     DataSource *ds = view->data_source;
 
@@ -194,45 +190,32 @@ void sort_view(View *view) {
         if (is_numeric) {
             decorated_rows[i].key.numeric_key = strtoll(render_buffer, NULL, 10);
         } else {
-            size_t len = strlen(render_buffer) + 1;
-            // For now, we just crash if the arena is too small. A real implementation
-            // might need to realloc.
-            if (string_key_arena && arena_offset + len <= view->visible_row_count * 32) {
-                char* dest = string_key_arena + arena_offset;
-                memcpy(dest, render_buffer, len);
-                decorated_rows[i].key.string_key = dest;
-                arena_offset += len;
-            } else {
-                 decorated_rows[i].key.string_key = ""; // Arena full
+            // Use strdup for safer, albeit potentially slower, memory allocation.
+            decorated_rows[i].key.string_key = strdup(render_buffer);
+            if (!decorated_rows[i].key.string_key) {
+                LOG_ERROR("Failed to allocate memory for sort key string.");
+                decorated_rows[i].key.string_key = ""; // Fallback to empty string
             }
         }
     }
 
     // --- 2. SORT ---
-    // Sort the decorated array using the unified comparison function
+    g_current_sort_direction = view->sort_direction;
     qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows);
 
-    // Handle descending sort by reversing the sorted array
-    if (view->sort_direction == SORT_DESC) {
-        for (size_t i = 0; i < view->visible_row_count / 2; i++) {
-            DecoratedRow temp = decorated_rows[i];
-            decorated_rows[i] = decorated_rows[view->visible_row_count - 1 - i];
-            decorated_rows[view->visible_row_count - 1 - i] = temp;
-        }
-    }
-
-
     // --- 3. UNDECORATE ---
-    // Create the final row_order_map from the sorted original indices.
-    
-    // Allocate or re-allocate the map
     if (!view->row_order_map) {
         view->row_order_map = malloc(view->visible_row_count * sizeof(size_t));
     }
     if (!view->row_order_map) {
         LOG_ERROR("Failed to allocate row_order_map for sorting.");
+        // Cleanup decorated rows before returning
+        if (!is_numeric) {
+            for (size_t i = 0; i < view->visible_row_count; i++) {
+                free(decorated_rows[i].key.string_key);
+            }
+        }
         free(decorated_rows);
-        free(string_key_arena);
         return;
     }
 
@@ -240,7 +223,12 @@ void sort_view(View *view) {
         view->row_order_map[i] = decorated_rows[i].original_index;
     }
     
-    // Cleanup
+    // --- Cleanup ---
+    if (!is_numeric) {
+        for (size_t i = 0; i < view->visible_row_count; i++) {
+            // strdup created a copy, so we need to free it.
+            free(decorated_rows[i].key.string_key);
+        }
+    }
     free(decorated_rows);
-    free(string_key_arena);
 } 

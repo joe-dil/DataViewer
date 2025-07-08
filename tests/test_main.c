@@ -19,6 +19,12 @@ extern int encoding_suite_size;
 extern TestCase data_source_tests[];
 extern int data_source_suite_size;
 
+extern TestCase sorting_tests[];
+extern int sorting_suite_size;
+
+extern TestCase utils_tests[];
+extern int utils_suite_size;
+
 extern TestCase foundation_tests[];
 extern int foundation_suite_size;
 
@@ -33,6 +39,8 @@ int main(void) {
     run_test_suite(config_tests, config_suite_size);
     run_test_suite(encoding_tests, encoding_suite_size);
     run_test_suite(data_source_tests, data_source_suite_size);
+    run_test_suite(sorting_tests, sorting_suite_size);
+    run_test_suite(utils_tests, utils_suite_size);
     
     printf("========== Running Integration Tests ==========\n");
     run_test_suite(foundation_tests, foundation_suite_size);

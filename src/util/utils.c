@@ -8,6 +8,7 @@
 #include <time.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 // --- Timing Utilities ---
 
@@ -45,13 +46,21 @@ void* safe_realloc(void *ptr, size_t size, const char *context) {
 
 bool is_string_numeric(const char *s) {
     if (!s || *s == '\0') return false;
-    // Handle empty strings, which are not numeric
-    if (*s == ' ' && *(s+1) == '\0') return false;
     
     char *endptr;
+    // Skip leading whitespace
+    while (isspace((unsigned char)*s)) s++;
+    
+    // Check for empty string or just whitespace
+    if (*s == '\0') return false;
+    
+    // Use strtoll for conversion
     strtoll(s, &endptr, 10);
     
-    // The string is numeric if strtoll consumed the entire string
+    // Skip trailing whitespace
+    while (isspace((unsigned char)*endptr)) endptr++;
+    
+    // The string is numeric if strtoll consumed the entire string (ignoring whitespace)
     return *endptr == '\0';
 }
 
