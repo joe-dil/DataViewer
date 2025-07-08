@@ -27,15 +27,6 @@ typedef struct {
 
 // --- Sorting Helpers ---
 
-// Helper to check if a string contains only digits (and an optional leading '-')
-static bool is_string_numeric(const char *s) {
-    if (!s || *s == '\0') return false;
-    char *endptr;
-    strtoll(s, &endptr, 10);
-    // The string is numeric if the end pointer is at the null terminator
-    return *endptr == '\0';
-}
-
 // Heuristic to check if a column is numeric by sampling its contents
 static bool is_column_numeric(View *view, int column_index) {
     if (!view || view->visible_row_count == 0) return false;
@@ -69,13 +60,21 @@ static int compare_decorated_rows_numeric(const void *a, const void *b) {
     const DecoratedRow *row_b = (const DecoratedRow *)b;
     if (row_a->key.numeric_key < row_b->key.numeric_key) return -1;
     if (row_a->key.numeric_key > row_b->key.numeric_key) return 1;
+    // Stable sort tie-breaker
+    if (row_a->original_index < row_b->original_index) return -1;
+    if (row_a->original_index > row_b->original_index) return 1;
     return 0;
 }
 
 static int compare_decorated_rows_string(const void *a, const void *b) {
     const DecoratedRow *row_a = (const DecoratedRow *)a;
     const DecoratedRow *row_b = (const DecoratedRow *)b;
-    return strcmp(row_a->key.string_key, row_b->key.string_key);
+    int result = strcmp(row_a->key.string_key, row_b->key.string_key);
+    if (result != 0) return result;
+    // Stable sort tie-breaker
+    if (row_a->original_index < row_b->original_index) return -1;
+    if (row_a->original_index > row_b->original_index) return 1;
+    return 0;
 }
 
 

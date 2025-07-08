@@ -2,6 +2,7 @@
 #define UTILS_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include "error_context.h"
 #include "logging.h"
@@ -23,5 +24,6 @@ void* safe_realloc(void *ptr, size_t size, const char *context);
 
 // Hashing
 uint32_t fnv1a_hash(const char *str);
+bool is_string_numeric(const char *s);
 
 #endif // UTILS_H 

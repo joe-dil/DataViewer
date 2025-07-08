@@ -15,19 +15,30 @@ ViewManager* init_view_manager(void) {
     return manager;
 }
 
+static void free_view_resources(View *view) {
+    if (!view) return;
+    
+    // Cleanup selection state
+    cleanup_row_selection(view);
+    
+    // Cleanup data source if owned
+    if (view->data_source && view->owns_data_source) {
+        destroy_data_source(view->data_source);
+    }
+    
+    // Free other resources
+    free(view->row_selected);
+    free(view->ranges);
+    free(view->row_order_map);
+    free(view->visible_rows);  // For backward compatibility
+}
+
 void cleanup_view_manager(ViewManager *manager) {
     if (!manager) return;
     View *current = manager->views;
     while (current) {
         View *next = current->next;
-        // Cleanup selection state
-        cleanup_row_selection(current);
-        // Cleanup data source if owned
-        if (current->data_source && current->owns_data_source) {
-            destroy_data_source(current->data_source);
-        }
-        free(current->ranges);
-        free(current->row_order_map);
+        free_view_resources(current);
         free(current);
         current = next;
     }
@@ -143,12 +154,7 @@ void close_current_view(ViewManager *manager, ViewState *state) {
     }
 
     // Free resources
-    if (view_to_close->data_source && view_to_close->owns_data_source) {
-        destroy_data_source(view_to_close->data_source);
-    }
-    free(view_to_close->ranges);
-    free(view_to_close->row_order_map);
-    // Selections are not preserved per-view in this model, so no cleanup needed here.
+    free_view_resources(view_to_close);
     free(view_to_close);
 
     manager->view_count--;
@@ -287,19 +293,6 @@ bool add_view_to_manager(ViewManager *manager, View *view) {
 
     manager->view_count++;
     return true;
-}
-
-static void free_view_resources(View *view) {
-    if (!view) return;
-    
-    if (view->owns_data_source) {
-        destroy_data_source(view->data_source);
-    }
-    free(view->row_selected);
-    free(view->ranges); // Free the new ranges array
-    // The old visible_rows is deprecated and should be removed later.
-    // For now, ensure it's freed if it was somehow allocated.
-    free(view->visible_rows);
 }
 
 size_t view_get_displayed_row_index(const View *view, size_t display_row) {

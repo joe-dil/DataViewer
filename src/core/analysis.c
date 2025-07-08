@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include "logging.h"
+#include "util/utils.h"
 
 // --- Public API Functions ---
 
@@ -96,6 +97,56 @@ typedef struct {
     int count;
 } FreqValueCount;
 
+// Context for the frequency analysis qsort_r
+typedef struct {
+    bool is_value_numeric;
+} FreqSortContext;
+
+#ifdef __APPLE__
+// macOS comparator for frequency analysis sort
+static int compare_freq_counts(void *context, const void *a, const void *b) {
+    FreqSortContext *ctx = (FreqSortContext *)context;
+    const FreqValueCount *itemA = (const FreqValueCount *)a;
+    const FreqValueCount *itemB = (const FreqValueCount *)b;
+
+    if (itemA->count != itemB->count) {
+        return itemB->count - itemA->count;
+    }
+
+    if (ctx->is_value_numeric) {
+        long long val_a = strtoll(itemA->value, NULL, 10);
+        long long val_b = strtoll(itemB->value, NULL, 10);
+        if (val_a < val_b) return 1;
+        if (val_a > val_b) return -1;
+        return 0;
+    } else {
+        return strcmp(itemB->value, itemA->value);
+    }
+}
+#else
+// Linux comparator for frequency analysis sort
+static int compare_freq_counts(const void *a, const void *b, void *context) {
+    FreqSortContext *ctx = (FreqSortContext *)context;
+    const FreqValueCount *itemA = (const FreqValueCount *)a;
+    const FreqValueCount *itemB = (const FreqValueCount *)b;
+
+    if (itemA->count != itemB->count) {
+        return itemB->count - itemA->count;
+    }
+
+    if (ctx->is_value_numeric) {
+        long long val_a = strtoll(itemA->value, NULL, 10);
+        long long val_b = strtoll(itemB->value, NULL, 10);
+        if (val_a < val_b) return 1;
+        if (val_a > val_b) return -1;
+        return 0;
+    } else {
+        return strcmp(itemB->value, itemA->value);
+    }
+}
+#endif
+
+
 #define INITIAL_FREQ_TABLE_SIZE 1024
 
 // An entry in the frequency analysis hash table (internal to this C file)
@@ -114,7 +165,6 @@ typedef struct {
 } FreqAnalysisHashTable;
 
 // Forward declaration for the comparison function
-static int compare_freq_counts(const void *a, const void *b);
 static void hash_table_resize(FreqAnalysisHashTable *table);
 
 // Helper to get column name, trying header first
@@ -337,7 +387,29 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
         }
     }
 
-    qsort(sorted_items, table->item_count, sizeof(FreqValueCount), compare_freq_counts);
+    // --- Secondary Sort Logic ---
+    // Check if the 'Value' column is numeric to sort it correctly as a tie-breaker
+    bool is_value_numeric = true;
+    if (table->item_count > 0) {
+        // Sample up to 50 values to decide
+        size_t sample_size = table->item_count < 50 ? table->item_count : 50;
+        for (size_t i = 0; i < sample_size; i++) {
+            if (!is_string_numeric(sorted_items[i].value)) {
+                is_value_numeric = false;
+                break;
+            }
+        }
+    } else {
+        is_value_numeric = false;
+    }
+
+    FreqSortContext sort_ctx = { .is_value_numeric = is_value_numeric };
+
+#ifdef __APPLE__
+    qsort_r(sorted_items, table->item_count, sizeof(FreqValueCount), &sort_ctx, compare_freq_counts);
+#else
+    qsort_r(sorted_items, table->item_count, sizeof(FreqValueCount), compare_freq_counts, &sort_ctx);
+#endif
     
     char col_name_buffer[256];
     FieldDesc header_fd = ds->ops->get_header(ds->context, column_index);
@@ -378,13 +450,4 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     hash_table_destroy(table);
 
     return result_table;
-}
-
-// --- Comparison Functions ---
-
-// qsort comparison function for sorting frequency counts in descending order
-static int compare_freq_counts(const void *a, const void *b) {
-    const FreqValueCount *itemA = (const FreqValueCount *)a;
-    const FreqValueCount *itemB = (const FreqValueCount *)b;
-    return itemB->count - itemA->count; // Descending order
 } 
