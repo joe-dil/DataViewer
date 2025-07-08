@@ -4,6 +4,7 @@
 #include "ui/view_manager.h"
 #include "util/utils.h"
 #include "util/logging.h"
+#include "app_init.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -21,6 +22,7 @@ typedef union {
 // Struct to hold the decorated row information
 typedef struct {
     SortKey key;
+    bool is_numeric;
     size_t original_index; // Original index within the visible set
 } DecoratedRow;
 
@@ -54,32 +56,96 @@ static bool is_column_numeric(View *view, int column_index) {
 }
 
 
-// Comparison function for qsort (no context needed as keys are pre-computed)
-static int compare_decorated_rows_numeric(const void *a, const void *b) {
+// Unified comparison function for qsort
+static int compare_decorated_rows(const void *a, const void *b) {
     const DecoratedRow *row_a = (const DecoratedRow *)a;
     const DecoratedRow *row_b = (const DecoratedRow *)b;
-    if (row_a->key.numeric_key < row_b->key.numeric_key) return -1;
-    if (row_a->key.numeric_key > row_b->key.numeric_key) return 1;
-    // Stable sort tie-breaker
-    if (row_a->original_index < row_b->original_index) return -1;
-    if (row_a->original_index > row_b->original_index) return 1;
-    return 0;
+    
+    int result = 0;
+    
+    if (row_a->is_numeric) {
+        // Numeric comparison
+        if (row_a->key.numeric_key < row_b->key.numeric_key) {
+            result = -1;
+        } else if (row_a->key.numeric_key > row_b->key.numeric_key) {
+            result = 1;
+        } else {
+            result = 0;
+        }
+    } else {
+        // String comparison
+        result = strcmp(row_a->key.string_key, row_b->key.string_key);
+    }
+    
+    // If primary keys are equal, use original_index as stable tie-breaker
+    if (result == 0) {
+        if (row_a->original_index < row_b->original_index) {
+            result = -1;
+        } else if (row_a->original_index > row_b->original_index) {
+            result = 1;
+        }
+    }
+    
+    return result;
 }
 
-static int compare_decorated_rows_string(const void *a, const void *b) {
-    const DecoratedRow *row_a = (const DecoratedRow *)a;
-    const DecoratedRow *row_b = (const DecoratedRow *)b;
-    int result = strcmp(row_a->key.string_key, row_b->key.string_key);
-    if (result != 0) return result;
-    // Stable sort tie-breaker
-    if (row_a->original_index < row_b->original_index) return -1;
-    if (row_a->original_index > row_b->original_index) return 1;
-    return 0;
+bool is_column_sorted(View *view, int column_index, SortDirection direction) {
+    if (!view || view->visible_row_count <= 1) return true;
+
+    bool is_numeric = is_column_numeric(view, column_index);
+    char buffer_a[4096], buffer_b[4096];
+    DataSource *ds = view->data_source;
+
+    for (size_t i = 0; i < view->visible_row_count - 1; i++) {
+        size_t actual_row_a = view_get_displayed_row_index(view, i);
+        size_t actual_row_b = view_get_displayed_row_index(view, i + 1);
+
+        FieldDesc fd_a = ds->ops->get_cell(ds->context, actual_row_a, column_index);
+        FieldDesc fd_b = ds->ops->get_cell(ds->context, actual_row_b, column_index);
+
+        render_field(&fd_a, buffer_a, sizeof(buffer_a));
+        render_field(&fd_b, buffer_b, sizeof(buffer_b));
+
+        int comparison_result;
+        if (is_numeric) {
+            long long val_a = strtoll(buffer_a, NULL, 10);
+            long long val_b = strtoll(buffer_b, NULL, 10);
+            if (val_a < val_b) comparison_result = -1;
+            else if (val_a > val_b) comparison_result = 1;
+            else comparison_result = 0;
+        } else {
+            comparison_result = strcmp(buffer_a, buffer_b);
+        }
+
+        if (direction == SORT_ASC && comparison_result > 0) return false;
+        if (direction == SORT_DESC && comparison_result < 0) return false;
+    }
+
+    return true;
 }
 
 
 void sort_view(View *view) {
     if (!view || !view->data_source) return;
+
+    // Determine the new sort direction for the current sort_column
+    if (view->sort_column == view->last_sorted_column) {
+        // Same column as last sort, cycle through states based on actual sort
+        if (view->sort_direction == SORT_ASC && is_column_sorted(view, view->sort_column, SORT_ASC)) {
+            view->sort_direction = SORT_DESC;
+        } else if (view->sort_direction == SORT_DESC && is_column_sorted(view, view->sort_column, SORT_DESC)) {
+            view->sort_direction = SORT_NONE;
+            view->sort_column = -1; // Reset sort column when sorting is off
+        } else {
+            // If it's the same column but not currently sorted as expected, or was SORT_NONE, default to ASC
+            view->sort_direction = SORT_ASC;
+        }
+    } else {
+        // New column being sorted, default to ASC
+        view->sort_direction = SORT_ASC;
+    }
+
+    view->last_sorted_column = view->sort_column; // Update last sorted column
 
     // If sorting is turned off, free the map and return
     if (view->sort_direction == SORT_NONE) {
@@ -119,6 +185,7 @@ void sort_view(View *view) {
 
     for (size_t i = 0; i < view->visible_row_count; i++) {
         decorated_rows[i].original_index = i;
+        decorated_rows[i].is_numeric = is_numeric;
         size_t actual_row = view_get_actual_row_index(view, i);
 
         FieldDesc fd = ds->ops->get_cell(ds->context, actual_row, view->sort_column);
@@ -142,12 +209,8 @@ void sort_view(View *view) {
     }
 
     // --- 2. SORT ---
-    // Sort the decorated array. The comparison is now very fast.
-    if (is_numeric) {
-        qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows_numeric);
-    } else {
-        qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows_string);
-    }
+    // Sort the decorated array using the unified comparison function
+    qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows);
 
     // Handle descending sort by reversing the sorted array
     if (view->sort_direction == SORT_DESC) {

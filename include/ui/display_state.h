@@ -56,11 +56,17 @@ typedef struct {
     
     // Error message display
     char error_message[256];
-    int show_error_message;
-    double error_message_time;  // Time when error was set (for auto-clear)
+    double error_message_time;
+    int show_error_message; // Use as a boolean
+
+    // Status message state
+    char status_message[256];
+    double status_message_time;
+    int show_status_message; // Use as a boolean
 } DisplayState;
 
 // Error message display function
 void set_error_message(struct DSVViewer *viewer, const char *format, ...);
+void set_status_message(struct DSVViewer *viewer, const char *format, ...);
 
 #endif // DISPLAY_STATE_H 

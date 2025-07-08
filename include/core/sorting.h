@@ -3,6 +3,9 @@
 
 #include "ui/view_manager.h"
 
+// Forward declaration
+struct DSVViewer;
+
 /**
  * @brief Sorts a view based on its internal sort_column and sort_direction state.
  *
@@ -13,4 +16,14 @@
  */
 void sort_view(View *view);
 
-#endif // SORTING_H 
+/**
+ * @brief Checks if a column in a view is already sorted.
+ *
+ * @param view The view to check.
+ * @param column_index The index of the column to check.
+ * @param direction The direction to check for (SORT_ASC or SORT_DESC).
+ * @return True if the column is sorted, false otherwise.
+ */
+bool is_column_sorted(View *view, int column_index, SortDirection direction);
+
+#endif // SORTING_H

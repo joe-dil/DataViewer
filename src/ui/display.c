@@ -17,6 +17,8 @@
 #define COLOR_PAIR_ERROR 3
 #define ERROR_MESSAGE_DURATION_MS 3000  // Show error for 3 seconds
 
+#define STATUS_MESSAGE_DURATION_MS 3000 // Show status for 3 seconds
+
 // Helper function to check if error message should still be shown
 static bool should_show_error(DSVViewer *viewer) {
     if (!viewer || !viewer->display_state || !viewer->display_state->show_error_message) {
@@ -26,6 +28,21 @@ static bool should_show_error(DSVViewer *viewer) {
     double elapsed = get_time_ms() - viewer->display_state->error_message_time;
     if (elapsed > ERROR_MESSAGE_DURATION_MS) {
         viewer->display_state->show_error_message = 0;
+        return false;
+    }
+    
+    return true;
+}
+
+// Helper function to check if status message should still be shown
+static bool should_show_status(DSVViewer *viewer) {
+    if (!viewer || !viewer->display_state || !viewer->display_state->show_status_message) {
+        return false;
+    }
+    
+    double elapsed = get_time_ms() - viewer->display_state->status_message_time;
+    if (elapsed > STATUS_MESSAGE_DURATION_MS) {
+        viewer->display_state->show_status_message = 0;
         return false;
     }
     
@@ -510,6 +527,9 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
         mvprintw(rows - 1, 0, "Error: %s", viewer->display_state->error_message);
         attroff(COLOR_PAIR(COLOR_PAIR_ERROR));
     }
+    else if (should_show_status(viewer)) {
+        mvprintw(rows - 1, 0, "%s", viewer->display_state->status_message);
+    }
     else if (viewer->display_state->show_copy_status) {
         // Show copy status message
         mvprintw(rows - 1, 0, "%s", viewer->display_state->copy_status);
@@ -591,5 +611,20 @@ void set_error_message(DSVViewer *viewer, const char *format, ...) {
     
     viewer->display_state->show_error_message = 1;
     viewer->display_state->error_message_time = get_time_ms();
+    viewer->view_state.needs_redraw = true;
+} 
+
+// Helper function to set a status message
+void set_status_message(DSVViewer *viewer, const char *format, ...) {
+    if (!viewer || !viewer->display_state) return;
+    
+    va_list args;
+    va_start(args, format);
+    vsnprintf(viewer->display_state->status_message, 
+              sizeof(viewer->display_state->status_message), format, args);
+    va_end(args);
+    
+    viewer->display_state->show_status_message = 1;
+    viewer->display_state->status_message_time = get_time_ms();
     viewer->view_state.needs_redraw = true;
 } 

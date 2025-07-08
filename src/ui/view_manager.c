@@ -55,6 +55,7 @@ View* create_main_view(DataSource *data_source) {
     main_view->ranges = NULL;
     main_view->num_ranges = 0;
     main_view->sort_column = -1;
+    main_view->last_sorted_column = -1;
     main_view->sort_direction = SORT_NONE;
     main_view->row_order_map = NULL;
     if (data_source && data_source->ops && data_source->ops->get_row_count) {
@@ -210,6 +211,7 @@ View* create_view_from_selection(ViewManager *manager,
     new_view->data_source = parent_data_source;
     new_view->owns_data_source = false; // This view just filters the parent, doesn't own it.
     new_view->sort_column = -1;
+    new_view->last_sorted_column = -1;
     new_view->sort_direction = SORT_NONE;
     new_view->row_order_map = NULL;
 

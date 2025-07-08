@@ -38,6 +38,25 @@ static void setup_file_ds_test(FileDSTestFixture* fixture, const char* content) 
 
 **Result**: All 63 tests now pass successfully, including the previously failing data source tests.
 
+### Unified Sorting Function Refactor
+**Date**: Current session
+**Issue**: The sorting system had separate comparison functions for numeric and string sorting, creating unnecessary complexity and code duplication.
+
+**Solution**: Refactored `src/core/sorting.c` to use a single unified comparison function:
+
+1. **Simplified Structure**: Added `is_numeric` flag to `DecoratedRow` struct to track data type
+2. **Unified Logic**: Single `compare_decorated_rows()` function handles both numeric and string comparisons
+3. **Maintained Stability**: Preserved stable sorting behavior with `original_index` tie-breaking
+4. **Reduced Code**: Eliminated duplicate comparison logic and simplified the sorting flow
+
+**Code Changes**:
+- Replaced `compare_decorated_rows_numeric()` and `compare_decorated_rows_string()` with single `compare_decorated_rows()`
+- Updated `DecoratedRow` struct to include `is_numeric` field
+- Simplified qsort call to use single comparison function
+- Maintained all existing functionality and stability guarantees
+
+**Result**: Cleaner, more maintainable sorting code with identical functionality and better UX for frequency analysis sorting.
+
 ## Application Architecture
 
 ### Core Components
@@ -164,9 +183,9 @@ void cleanup_resource(Resource *res) {
 
 ## Areas for Improvement
 
-1. **Code Duplication**: Some boundary checking logic could be extracted into helper functions
-2. **Magic Numbers**: Some constants could be better defined and documented
-3. **Error Recovery**: Some error conditions could be handled more gracefully rather than just displaying messages
+1. **Magic Numbers**: Some constants could be better defined and documented
+2. **Error Recovery**: Some error conditions could be handled more gracefully rather than just displaying messages
+3. **Secondary Sort Keys**: Could implement more sophisticated tie-breaking for frequency analysis views
 
 ## Known Issues
 - None currently identified

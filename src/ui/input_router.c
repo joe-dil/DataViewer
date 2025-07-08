@@ -271,22 +271,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         case ']': // Cycle sort for the current column
             if (state->current_view) {
                 View *view = state->current_view;
-                int current_col = view->cursor_col;
-
-                if (view->sort_column != current_col) {
-                    // Sort this new column, descending
-                    view->sort_column = current_col;
-                    view->sort_direction = SORT_DESC;
-                } else {
-                    // Cycle the sort direction
-                    if (view->sort_direction == SORT_DESC) {
-                        view->sort_direction = SORT_ASC;
-                    } else {
-                        view->sort_direction = SORT_NONE;
-                        view->sort_column = -1;
-                    }
-                }
-                
+                view->sort_column = view->cursor_col;
                 sort_view(view);
                 state->needs_redraw = true;
             }

@@ -34,6 +34,7 @@ typedef struct View {
 
     // Sorting state
     int sort_column;              // Column index for sorting, -1 if not sorted
+    int last_sorted_column;       // New field to track the last column sorted
     SortDirection sort_direction; // Direction of the sort
     size_t *row_order_map;        // Maps displayed row to an index in the visible set
     
