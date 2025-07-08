@@ -9,6 +9,22 @@
 #include <ctype.h>
 #include <stdbool.h>
 
+// --- Data Structures for Sorting ---
+
+// Represents a pre-computed sort key for a single row.
+// This is the "decorate" part of the Schwartzian Transform.
+typedef union {
+    long long numeric_key;
+    char* string_key;
+} SortKey;
+
+// Struct to hold the decorated row information
+typedef struct {
+    SortKey key;
+    size_t original_index; // Original index within the visible set
+} DecoratedRow;
+
+
 // --- Sorting Helpers ---
 
 // Helper to check if a string contains only digits (and an optional leading '-')
@@ -47,98 +63,21 @@ static bool is_column_numeric(View *view, int column_index) {
 }
 
 
-// Context structure to pass to the comparison function
-typedef struct {
-    View *view;
-    char *buffer_a;
-    char *buffer_b;
-    size_t buffer_size;
-    bool is_numeric;
-} SortContext;
-
-#ifdef __APPLE__
-// macOS/BSD version of the comparison function for qsort_r
-static int compare_rows_apple(void *context, const void *a, const void *b) {
-    SortContext *ctx = (SortContext*)context;
-    View *view = ctx->view;
-    DataSource *ds = view->data_source;
-
-    size_t index_a = *(const size_t *)a;
-    size_t index_b = *(const size_t *)b;
-
-    // Translate from visible set index to actual data source row index
-    size_t actual_row_a = view_get_actual_row_index(view, index_a);
-    size_t actual_row_b = view_get_actual_row_index(view, index_b);
-
-    if (actual_row_a == SIZE_MAX || actual_row_b == SIZE_MAX) {
-        return 0; // Should not happen
-    }
-
-    // Get cell data as strings
-    FieldDesc fd_a = ds->ops->get_cell(ds->context, actual_row_a, view->sort_column);
-    render_field(&fd_a, ctx->buffer_a, ctx->buffer_size);
-
-    FieldDesc fd_b = ds->ops->get_cell(ds->context, actual_row_b, view->sort_column);
-    render_field(&fd_b, ctx->buffer_b, ctx->buffer_size);
-
-    int result;
-    if (ctx->is_numeric) {
-        long long val_a = strtoll(ctx->buffer_a, NULL, 10);
-        long long val_b = strtoll(ctx->buffer_b, NULL, 10);
-        if (val_a < val_b) result = -1;
-        else if (val_a > val_b) result = 1;
-        else result = 0;
-    } else {
-        result = strcmp(ctx->buffer_a, ctx->buffer_b);
-    }
-
-    if (view->sort_direction == SORT_DESC) {
-        return -result;
-    }
-    return result;
+// Comparison function for qsort (no context needed as keys are pre-computed)
+static int compare_decorated_rows_numeric(const void *a, const void *b) {
+    const DecoratedRow *row_a = (const DecoratedRow *)a;
+    const DecoratedRow *row_b = (const DecoratedRow *)b;
+    if (row_a->key.numeric_key < row_b->key.numeric_key) return -1;
+    if (row_a->key.numeric_key > row_b->key.numeric_key) return 1;
+    return 0;
 }
-#else
-// Standard Linux/glibc version of the comparison function
-static int compare_rows(const void *a, const void *b, void *context) {
-    SortContext *ctx = (SortContext*)context;
-    View *view = ctx->view;
-    DataSource *ds = view->data_source;
 
-    size_t index_a = *(const size_t *)a;
-    size_t index_b = *(const size_t *)b;
-
-    // Translate from visible set index to actual data source row index
-    size_t actual_row_a = view_get_actual_row_index(view, index_a);
-    size_t actual_row_b = view_get_actual_row_index(view, index_b);
-
-    if (actual_row_a == SIZE_MAX || actual_row_b == SIZE_MAX) {
-        return 0; // Should not happen
-    }
-
-    // Get cell data as strings
-    FieldDesc fd_a = ds->ops->get_cell(ds->context, actual_row_a, view->sort_column);
-    render_field(&fd_a, ctx->buffer_a, ctx->buffer_size);
-
-    FieldDesc fd_b = ds->ops->get_cell(ds->context, actual_row_b, view->sort_column);
-    render_field(&fd_b, ctx->buffer_b, ctx->buffer_size);
-
-    int result;
-    if (ctx->is_numeric) {
-        long long val_a = strtoll(ctx->buffer_a, NULL, 10);
-        long long val_b = strtoll(ctx->buffer_b, NULL, 10);
-        if (val_a < val_b) result = -1;
-        else if (val_a > val_b) result = 1;
-        else result = 0;
-    } else {
-        result = strcmp(ctx->buffer_a, ctx->buffer_b);
-    }
-
-    if (view->sort_direction == SORT_DESC) {
-        return -result;
-    }
-    return result;
+static int compare_decorated_rows_string(const void *a, const void *b) {
+    const DecoratedRow *row_a = (const DecoratedRow *)a;
+    const DecoratedRow *row_b = (const DecoratedRow *)b;
+    return strcmp(row_a->key.string_key, row_b->key.string_key);
 }
-#endif
+
 
 void sort_view(View *view) {
     if (!view || !view->data_source) return;
@@ -151,45 +90,95 @@ void sort_view(View *view) {
 
     if (view->visible_row_count == 0) return;
 
-    // Allocate or re-allocate the map
-    if (!view->row_order_map) {
-        view->row_order_map = malloc(view->visible_row_count * sizeof(size_t));
-        if (!view->row_order_map) {
-            LOG_ERROR("Failed to allocate row_order_map for sorting.");
-            return;
-        }
-    }
+    // --- 1. DECORATE ---
+    // Create an array of decorated rows with pre-computed sort keys.
 
-    // Initialize map with identity mapping (0, 1, 2, ...)
-    for (size_t i = 0; i < view->visible_row_count; i++) {
-        view->row_order_map[i] = i;
-    }
-
-    // Prepare context for the comparison function
-    SortContext context;
-    context.view = view;
-    context.is_numeric = is_column_numeric(view, view->sort_column);
-    // These buffers are used to avoid repeated mallocs inside the comparator
-    context.buffer_size = 4096; // A reasonable max field size for comparison
-    context.buffer_a = malloc(context.buffer_size);
-    context.buffer_b = malloc(context.buffer_size);
-
-    if (!context.buffer_a || !context.buffer_b) {
-        LOG_ERROR("Failed to allocate sort buffers.");
-        free(context.buffer_a);
-        free(context.buffer_b);
-        // Don't sort, leave the map as identity
+    DecoratedRow *decorated_rows = malloc(view->visible_row_count * sizeof(DecoratedRow));
+    if (!decorated_rows) {
+        LOG_ERROR("Failed to allocate for decorated rows.");
         return;
     }
 
-    // Use the correct version of qsort_r based on the platform
-#ifdef __APPLE__
-    qsort_r(view->row_order_map, view->visible_row_count, sizeof(size_t), &context, compare_rows_apple);
-#else
-    qsort_r(view->row_order_map, view->visible_row_count, sizeof(size_t), compare_rows, &context);
-#endif
+    bool is_numeric = is_column_numeric(view, view->sort_column);
+    char *string_key_arena = NULL;
+    size_t arena_offset = 0;
+
+    if (!is_numeric) {
+        // Pre-allocate a single large block for all string keys for performance
+        // Average 32 bytes per key as a heuristic.
+        size_t arena_size = view->visible_row_count * 32;
+        string_key_arena = malloc(arena_size);
+        if (!string_key_arena) {
+            LOG_ERROR("Failed to allocate string arena for sorting.");
+            free(decorated_rows);
+            return;
+        }
+    }
+    
+    char render_buffer[4096];
+    DataSource *ds = view->data_source;
+
+    for (size_t i = 0; i < view->visible_row_count; i++) {
+        decorated_rows[i].original_index = i;
+        size_t actual_row = view_get_actual_row_index(view, i);
+
+        FieldDesc fd = ds->ops->get_cell(ds->context, actual_row, view->sort_column);
+        render_field(&fd, render_buffer, sizeof(render_buffer));
+
+        if (is_numeric) {
+            decorated_rows[i].key.numeric_key = strtoll(render_buffer, NULL, 10);
+        } else {
+            size_t len = strlen(render_buffer) + 1;
+            // For now, we just crash if the arena is too small. A real implementation
+            // might need to realloc.
+            if (string_key_arena && arena_offset + len <= view->visible_row_count * 32) {
+                char* dest = string_key_arena + arena_offset;
+                memcpy(dest, render_buffer, len);
+                decorated_rows[i].key.string_key = dest;
+                arena_offset += len;
+            } else {
+                 decorated_rows[i].key.string_key = ""; // Arena full
+            }
+        }
+    }
+
+    // --- 2. SORT ---
+    // Sort the decorated array. The comparison is now very fast.
+    if (is_numeric) {
+        qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows_numeric);
+    } else {
+        qsort(decorated_rows, view->visible_row_count, sizeof(DecoratedRow), compare_decorated_rows_string);
+    }
+
+    // Handle descending sort by reversing the sorted array
+    if (view->sort_direction == SORT_DESC) {
+        for (size_t i = 0; i < view->visible_row_count / 2; i++) {
+            DecoratedRow temp = decorated_rows[i];
+            decorated_rows[i] = decorated_rows[view->visible_row_count - 1 - i];
+            decorated_rows[view->visible_row_count - 1 - i] = temp;
+        }
+    }
+
+
+    // --- 3. UNDECORATE ---
+    // Create the final row_order_map from the sorted original indices.
+    
+    // Allocate or re-allocate the map
+    if (!view->row_order_map) {
+        view->row_order_map = malloc(view->visible_row_count * sizeof(size_t));
+    }
+    if (!view->row_order_map) {
+        LOG_ERROR("Failed to allocate row_order_map for sorting.");
+        free(decorated_rows);
+        free(string_key_arena);
+        return;
+    }
+
+    for (size_t i = 0; i < view->visible_row_count; i++) {
+        view->row_order_map[i] = decorated_rows[i].original_index;
+    }
     
     // Cleanup
-    free(context.buffer_a);
-    free(context.buffer_b);
+    free(decorated_rows);
+    free(string_key_arena);
 } 
