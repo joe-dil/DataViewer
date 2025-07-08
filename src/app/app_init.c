@@ -131,7 +131,7 @@ static DSVResult init_file_system(DSVViewer *viewer, const char *filename) {
         return DSV_ERROR_FILE_IO;
     }
     
-    printf("File operations: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("File operations: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -152,7 +152,7 @@ static DSVResult init_analysis_system(DSVViewer *viewer, char delimiter) {
         return DSV_ERROR_PARSE;
     }
     
-    printf("Data structures: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("Data structures: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -171,7 +171,7 @@ static DSVResult init_display_system(DSVViewer *viewer) {
     configure_viewer_settings(viewer, viewer->config);
     initialize_viewer_cache(viewer, viewer->config);
     
-    printf("Display features: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("Display features: %.2f ms", get_time_ms() - phase_time);
     return DSV_OK;
 }
 
@@ -191,7 +191,7 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     res = init_viewer_components(viewer, config);
     if (res != DSV_OK) return res;
     init_view_state(&viewer->view_state); // Initialize the global view state
-    printf("Core components: %.2f ms\n", get_time_ms() - phase_time);
+    LOG_DEBUG("Core components: %.2f ms", get_time_ms() - phase_time);
 
     // File operations
     res = init_file_system(viewer, filename);
@@ -205,13 +205,16 @@ DSVResult init_viewer(DSVViewer *viewer, const char *filename, char delimiter, c
     res = init_display_system(viewer);
     if (res != DSV_OK) return res;
 
-    printf("Total initialization: %.2f ms\n", get_time_ms() - total_time);
+    LOG_INFO("Total initialization: %.2f ms", get_time_ms() - total_time);
     LOG_INFO("Viewer initialized successfully.");
     return DSV_OK;
 }
 
 void init_view_state(ViewState *state) {
     state->current_panel = PANEL_TABLE_VIEW;
+    state->input_mode = INPUT_MODE_NORMAL;
+    state->search_term[0] = '\0';
+    state->search_message[0] = '\0';
     state->needs_redraw = true;
     // Selection state is now handled per-View, not in ViewState
     state->current_view = NULL;

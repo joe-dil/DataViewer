@@ -25,9 +25,19 @@ typedef enum {
     // Future: PANEL_COLUMN_STATS, PANEL_ROW_DETAILS
 } PanelType;
 
+// Different modes for user input
+typedef enum {
+    INPUT_MODE_NORMAL,   // Navigating the table
+    INPUT_MODE_SEARCH,   // Typing a search query
+    // Future: INPUT_MODE_COMMAND
+} InputMode;
+
 // View state that tracks current panel and redraw needs
 typedef struct {
     PanelType current_panel;
+    InputMode input_mode;
+    char search_term[256];
+    char search_message[256];
     bool needs_redraw;
     struct View *current_view; // The view whose data is being displayed
     

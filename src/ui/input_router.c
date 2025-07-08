@@ -10,10 +10,12 @@
 #include <string.h>
 #include "memory/in_memory_table.h"
 #include "core/sorting.h"
+#include "core/search.h"
 
 // Forward declarations for copy functionality
 static char* get_field_at_cursor(const ViewState *state);
 static void copy_to_clipboard_with_status(DSVViewer *viewer, const char *text);
+static InputResult handle_search_input(int ch, struct DSVViewer *viewer, ViewState *state);
 
 // Helper function to get the field value at the current cursor position
 static char* get_field_at_cursor(const ViewState *state) {
@@ -289,6 +291,24 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 state->needs_redraw = true;
             }
             return INPUT_CONSUMED;
+        case 'n': // Find next search result
+            if (state->search_term[0] != '\0') {
+                SearchResult result = search_view(viewer, state->current_view, state->search_term, false);
+                if (result == SEARCH_WRAPPED_AND_FOUND) {
+                    snprintf(state->search_message, sizeof(state->search_message), "| Found: %s - search wrapped", state->search_term);
+                } else if (result == SEARCH_FOUND) {
+                    snprintf(state->search_message, sizeof(state->search_message), "| Found: %s", state->search_term);
+                }
+                state->needs_redraw = true;
+            } else {
+                set_error_message(viewer, "No active search term");
+            }
+            return INPUT_CONSUMED;
+        case '/':
+            state->input_mode = INPUT_MODE_SEARCH;
+            // Don't clear the search term, so user can edit the previous one
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
         case 'y':  // Copy current cell to clipboard
             {
                 // Get the field value at cursor position
@@ -313,6 +333,7 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
         state->current_view->cursor_row != old_cursor_row ||
         state->current_view->cursor_col != old_cursor_col) {
         state->needs_redraw = true;
+        state->search_message[0] = '\0'; // Clear search message on any navigation
         return INPUT_CONSUMED;
     }
     
@@ -323,6 +344,11 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
 // --- Input Handlers per Panel ---
 
 InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
+    // Check for special input modes first
+    if (state->input_mode == INPUT_MODE_SEARCH) {
+        return handle_search_input(ch, viewer, state);
+    }
+
     // First, check for global commands
     GlobalResult global_result = handle_global_input(ch, state);
     if (global_result != GLOBAL_CONTINUE) {
@@ -348,5 +374,56 @@ InputResult route_input(int ch, struct DSVViewer *viewer, ViewState *state) {
             
         default:
             return INPUT_IGNORED;
+    }
+}
+
+// --- Search Input Handler ---
+
+static InputResult handle_search_input(int ch, struct DSVViewer *viewer, ViewState *state) {
+    (void)viewer; // viewer might be used later for search execution
+
+    switch(ch) {
+        case 27: // ESC key
+            state->input_mode = INPUT_MODE_NORMAL;
+            state->search_term[0] = '\0';
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+
+        case KEY_ENTER:
+        case '\n':
+        case '\r':
+            state->input_mode = INPUT_MODE_NORMAL;
+            SearchResult result = search_view(viewer, state->current_view, state->search_term, true);
+            if (result == SEARCH_WRAPPED_AND_FOUND) {
+                snprintf(state->search_message, sizeof(state->search_message), "| Found: %s - search wrapped", state->search_term);
+            } else if (result == SEARCH_FOUND) {
+                snprintf(state->search_message, sizeof(state->search_message), "| Found: %s", state->search_term);
+            }
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+
+        case KEY_BACKSPACE:
+        case 127: // Handle backspace variations
+        case 8:   // Handle backspace variations
+            {
+                size_t len = strlen(state->search_term);
+                if (len > 0) {
+                    state->search_term[len - 1] = '\0';
+                }
+            }
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
+
+        default:
+            // Append printable characters to the search term
+            if (ch >= 32 && ch <= 126) {
+                size_t len = strlen(state->search_term);
+                if (len < (sizeof(state->search_term) - 1)) {
+                    state->search_term[len] = ch;
+                    state->search_term[len + 1] = '\0';
+                }
+            }
+            state->needs_redraw = true;
+            return INPUT_CONSUMED;
     }
 } 

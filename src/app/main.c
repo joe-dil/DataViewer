@@ -9,7 +9,8 @@
 #include "utils.h"
 
 int main(int argc, char *argv[]) {
-    init_logging(LOG_LEVEL_INFO, "-"); // Log to stderr
+    // --- Pre-initialization ---
+    logging_init();
     
     // Initialize locale before any other operations
     setlocale(LC_ALL, "");

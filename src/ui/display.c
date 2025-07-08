@@ -483,13 +483,17 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
     move(rows - 1, 0);
     clrtoeol();
     
-    // Check if we should show error message (highest priority)
-    if (should_show_error(viewer)) {
+    // Check for special modes first, as they take priority
+    if (state->input_mode == INPUT_MODE_SEARCH) {
+        mvprintw(rows - 1, 0, "/%s", state->search_term);
+        // Place cursor at the end of the typed term
+        move(rows - 1, strlen(state->search_term) + 1);
+    }
+    else if (should_show_error(viewer)) {
         attron(COLOR_PAIR(COLOR_PAIR_ERROR));
         mvprintw(rows - 1, 0, "Error: %s", viewer->display_state->error_message);
         attroff(COLOR_PAIR(COLOR_PAIR_ERROR));
     }
-    // Check if we should show copy status message
     else if (viewer->display_state->show_copy_status) {
         // Show copy status message
         mvprintw(rows - 1, 0, "%s", viewer->display_state->copy_status);
@@ -517,6 +521,11 @@ static void display_table_view(DSVViewer *viewer, const ViewState *state) {
                      temp_buffer,
                      current_view->sort_direction == SORT_ASC ? "ASC" : "DESC");
             strncat(status_buffer, sort_col_name, sizeof(status_buffer) - strlen(status_buffer) - 1);
+        }
+
+        // Append search message if it exists
+        if (state->search_message[0] != '\0') {
+            strncat(status_buffer, state->search_message, sizeof(status_buffer) - strlen(status_buffer) - 1);
         }
         
         mvprintw(rows - 1, 0, "%s", status_buffer);
