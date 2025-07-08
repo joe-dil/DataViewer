@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "memory/in_memory_table.h"
+#include "core/sorting.h"
 
 // Forward declarations for copy functionality
 static char* get_field_at_cursor(const ViewState *state);
@@ -24,16 +25,13 @@ static char* get_field_at_cursor(const ViewState *state) {
     size_t row = state->current_view->cursor_row;
     size_t col = state->current_view->cursor_col;
 
-    // Handle filtered views by translating display row to actual data source row
-    if (state->current_view->num_ranges > 0) {
-        size_t actual_row = view_get_actual_row_index(state->current_view, row);
-        if (actual_row == SIZE_MAX) {
-            return NULL; // Invalid display row, should not happen if cursor is valid
-        }
-        row = actual_row;
+    // Handle filtered and sorted views by translating display row to actual data source row
+    size_t actual_row = view_get_displayed_row_index(state->current_view, row);
+    if (actual_row == SIZE_MAX) {
+        return NULL; // Invalid display row
     }
 
-    FieldDesc fd = ds->ops->get_cell(ds->context, row, col);
+    FieldDesc fd = ds->ops->get_cell(ds->context, actual_row, col);
 
     if (fd.start == NULL) {
         return NULL;
@@ -266,6 +264,29 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                 state->needs_redraw = true;
             } else {
                 set_error_message(viewer, "Cannot close the main view");
+            }
+            return INPUT_CONSUMED;
+        case ']': // Cycle sort for the current column
+            if (state->current_view) {
+                View *view = state->current_view;
+                int current_col = view->cursor_col;
+
+                if (view->sort_column != current_col) {
+                    // Sort this new column, descending
+                    view->sort_column = current_col;
+                    view->sort_direction = SORT_DESC;
+                } else {
+                    // Cycle the sort direction
+                    if (view->sort_direction == SORT_DESC) {
+                        view->sort_direction = SORT_ASC;
+                    } else {
+                        view->sort_direction = SORT_NONE;
+                        view->sort_column = -1;
+                    }
+                }
+                
+                sort_view(view);
+                state->needs_redraw = true;
             }
             return INPUT_CONSUMED;
         case 'y':  // Copy current cell to clipboard

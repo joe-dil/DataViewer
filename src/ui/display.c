@@ -297,16 +297,11 @@ static int draw_data_row(int y, DSVViewer *viewer, const ViewState *state, size_
 
         if (state->current_view && state->current_view->data_source) {
              DataSource *ds = state->current_view->data_source;
-             size_t actual_row = display_row;
+             size_t actual_row = view_get_displayed_row_index(state->current_view, display_row);
 
-             // If this is a filtered view, translate display row to actual data source row
-             if (state->current_view->num_ranges > 0) {
-                 if (display_row >= state->current_view->visible_row_count) {
-                     // Should not happen if calling code is correct, but safe guard.
-                     continue; 
-                 }
-                 actual_row = view_get_actual_row_index(state->current_view, display_row);
-                 if (actual_row == SIZE_MAX) continue;
+             if (actual_row == SIZE_MAX) {
+                 // Should not happen if calling code is correct
+                 continue;
              }
              
              FieldDesc fd = ds->ops->get_cell(ds->context, actual_row, col);

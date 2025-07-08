@@ -15,52 +15,6 @@
 #include <stdint.h>
 #include "logging.h"
 
-// --- Local Arena Allocator for Frequency Analysis ---
-
-typedef struct {
-    char *buffer;
-    size_t size;
-    size_t offset;
-} Arena;
-
-static Arena* arena_create(size_t size) {
-    Arena *arena = malloc(sizeof(Arena));
-    if (!arena) return NULL;
-
-    arena->buffer = malloc(size);
-    if (!arena->buffer) {
-        free(arena);
-        return NULL;
-    }
-
-    arena->size = size;
-    arena->offset = 0;
-    return arena;
-}
-
-static void arena_destroy(Arena *arena) {
-    if (!arena) return;
-    free(arena->buffer);
-    free(arena);
-}
-
-static char* arena_alloc(Arena *arena, const char *str) {
-    if (!arena || !str) return NULL;
-
-    size_t len = strlen(str) + 1;
-    if (arena->offset + len > arena->size) {
-        // Arena is full. This is a limitation we accept for now to avoid
-        // complexity of resizing. A larger initial arena size might be needed.
-        LOG_WARN("Local arena full during frequency analysis. Results may be incomplete.");
-        return NULL;
-    }
-
-    char *dest = arena->buffer + arena->offset;
-    memcpy(dest, str, len);
-    arena->offset += len;
-    return dest;
-}
-
 // --- Public API Functions ---
 
 void cleanup_column_analysis(ColumnAnalysis *analysis) {
@@ -333,7 +287,7 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
     size_t num_rows = view->visible_row_count;
 
     for (size_t i = 0; i < num_rows; i++) {
-        size_t actual_row_index = view_get_actual_row_index(view, i);
+        size_t actual_row_index = view_get_displayed_row_index(view, i);
         if (actual_row_index == SIZE_MAX) continue; // Should not happen
         
         FieldDesc fd = ds->ops->get_cell(ds->context, actual_row_index, column_index);

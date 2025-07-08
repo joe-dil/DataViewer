@@ -14,6 +14,13 @@ typedef struct {
     size_t end;   // Inclusive end row index
 } RowRange;
 
+// Enum for sort direction
+typedef enum {
+    SORT_NONE,
+    SORT_ASC,
+    SORT_DESC
+} SortDirection;
+
 typedef struct View {
     char name[64];
     DataSource *data_source;      // NEW: Data source for this view
@@ -24,6 +31,11 @@ typedef struct View {
     RowRange *ranges;             // Array of visible row ranges
     size_t num_ranges;            // Number of ranges in the array
     size_t visible_row_count;     // Total number of rows across all ranges
+
+    // Sorting state
+    int sort_column;              // Column index for sorting, -1 if not sorted
+    SortDirection sort_direction; // Direction of the sort
+    size_t *row_order_map;        // Maps displayed row to an index in the visible set
 
     // Selection state - moved from global ViewState to per-view
     bool *row_selected;           // Bitmap for row selection in this view
@@ -71,5 +83,15 @@ bool add_view_to_manager(ViewManager *manager, View *view);
  * @return The corresponding row index in the data source, or SIZE_MAX if not found.
  */
 size_t view_get_actual_row_index(const View *view, size_t display_row);
+
+/**
+ * @brief Gets the actual data source row index for a given displayed row,
+ *        accounting for both filtering (ranges) and sorting.
+ *
+ * @param view The view to query.
+ * @param display_row The 0-based index of the row as shown on screen.
+ * @return The corresponding row index in the data source, or SIZE_MAX if not found.
+ */
+size_t view_get_displayed_row_index(const View *view, size_t display_row);
 
 #endif // VIEW_MANAGER_H 

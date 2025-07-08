@@ -27,6 +27,7 @@ void cleanup_view_manager(ViewManager *manager) {
             destroy_data_source(current->data_source);
         }
         free(current->ranges);
+        free(current->row_order_map);
         free(current);
         current = next;
     }
@@ -42,6 +43,9 @@ View* create_main_view(DataSource *data_source) {
     main_view->owns_data_source = false;  // Main view doesn't own file data source
     main_view->ranges = NULL;
     main_view->num_ranges = 0;
+    main_view->sort_column = -1;
+    main_view->sort_direction = SORT_NONE;
+    main_view->row_order_map = NULL;
     if (data_source && data_source->ops && data_source->ops->get_row_count) {
         main_view->visible_row_count = data_source->ops->get_row_count(data_source->context);
     } else {
@@ -143,6 +147,7 @@ void close_current_view(ViewManager *manager, ViewState *state) {
         destroy_data_source(view_to_close->data_source);
     }
     free(view_to_close->ranges);
+    free(view_to_close->row_order_map);
     // Selections are not preserved per-view in this model, so no cleanup needed here.
     free(view_to_close);
 
@@ -198,6 +203,9 @@ View* create_view_from_selection(ViewManager *manager,
     new_view->visible_row_count = count;
     new_view->data_source = parent_data_source;
     new_view->owns_data_source = false; // This view just filters the parent, doesn't own it.
+    new_view->sort_column = -1;
+    new_view->sort_direction = SORT_NONE;
+    new_view->row_order_map = NULL;
 
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
@@ -292,6 +300,18 @@ static void free_view_resources(View *view) {
     // The old visible_rows is deprecated and should be removed later.
     // For now, ensure it's freed if it was somehow allocated.
     free(view->visible_rows);
+}
+
+size_t view_get_displayed_row_index(const View *view, size_t display_row) {
+    if (!view) return SIZE_MAX;
+
+    // If the view is sorted, use the map to find the permuted index.
+    // Otherwise, the display order is the natural order.
+    size_t visible_set_index = (view->row_order_map)
+                             ? view->row_order_map[display_row]
+                             : display_row;
+
+    return view_get_actual_row_index(view, visible_set_index);
 }
 
 size_t view_get_actual_row_index(const View *view, size_t display_row) {
