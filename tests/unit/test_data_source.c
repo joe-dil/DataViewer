@@ -18,6 +18,9 @@ typedef struct {
 } FileDSTestFixture;
 
 static void setup_file_ds_test(FileDSTestFixture* fixture, const char* content) {
+    // Initialize the entire fixture to zero
+    memset(fixture, 0, sizeof(FileDSTestFixture));
+    
     config_init_defaults(&fixture->config);
     fixture->test_filename = "test_file_ds.csv";
     
@@ -27,10 +30,8 @@ static void setup_file_ds_test(FileDSTestFixture* fixture, const char* content) 
         fclose(f);
     }
 
-    // A simplified init process just to get the data source
-    init_viewer_components(&fixture->viewer, &fixture->config);
-    load_file_data(&fixture->viewer, fixture->test_filename);
-    scan_file_data(&fixture->viewer, &fixture->config);
+    // Use the public init_viewer function
+    init_viewer(&fixture->viewer, fixture->test_filename, 0, &fixture->config);
     fixture->viewer.main_data_source = create_file_data_source(&fixture->viewer);
 }
 
