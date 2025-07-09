@@ -3,6 +3,7 @@
 
 #include "view_state.h"
 #include "core/data_source.h"
+#include "core/value_index.h"
 
 // A view represents a specific way of looking at a data source.
 // This can be a direct view of a file, a filtered view, or a view
@@ -38,6 +39,21 @@ typedef struct View {
     SortDirection sort_direction; // Direction of the sort
     size_t *row_order_map;        // Maps displayed row to an index in the visible set
     
+    // Parent-child relationship for linked views
+    struct View *parent;            // Pointer to the parent view (NULL if this is a main view)
+    int parent_source_column;     // If this is a child view (e.g., from frequency analysis), 
+                                  // this is the column index in the parent view that was analyzed.
+    
+    ValueIndex *value_index;      // Holds the value-to-row-list mapping for analysis views
+    
+    // Cache for analysis results
+    ValueIndex **analysis_cache;  // Array of pointers to ValueIndex, one per column
+    size_t analysis_cache_size;   // Size of the analysis_cache array
+
+    // Reverse map for fast row lookups
+    size_t *reverse_row_map;       // Maps actual data source row index to display index
+    size_t reverse_row_map_size;    // The total size of the underlying data source
+
     // Selection state - moved from global ViewState to per-view
     bool *row_selected;           // Bitmap for row selection in this view
     size_t selection_count;       // Number of selected rows in this view
@@ -94,5 +110,34 @@ size_t view_get_actual_row_index(const View *view, size_t display_row);
  * @return The corresponding row index in the data source, or SIZE_MAX if not found.
  */
 size_t view_get_displayed_row_index(const View *view, size_t display_row);
+
+/**
+ * @brief If the given view is a child of another view (e.g., frequency analysis),
+ *        this function propagates a selection from the child to the parent.
+ *
+ * It takes the value from the child's current cursor row and selects all rows
+ * in the parent view that have the same value in the `parent_source_column`.
+ *
+ * @param child_view The view to propagate the selection from.
+ */
+void propagate_selection_to_parent(View *child_view);
+
+/**
+ * @brief Updates the parent view's selection based on all selected rows in the child.
+ *
+ * This function clears the parent's current selection and rebuilds it by finding
+ * all rows that match any of the selected values in the child view.
+ *
+ * @param child_view The child view whose selection has changed.
+ */
+void update_parent_selection_from_child(View *child_view);
+
+/**
+ * @brief Builds a reverse map for a view to allow for O(1) lookups of a
+ *        display row index from a data source row index.
+ *
+ * @param view The view for which to build the map.
+ */
+void view_build_reverse_map(View *view);
 
 #endif // VIEW_MANAGER_H 

@@ -13,6 +13,7 @@
 // Forward declarations
 struct DSVViewer;
 struct View;
+struct ValueIndex;
 
 // Analysis results structure (for future extensions: histograms, stats, etc.)
 typedef struct {
@@ -62,10 +63,11 @@ DSVResult analyze_column_widths(const FileData *file_data, const ParsedData *par
  * @param viewer The main application viewer instance.
  * @param view The data view to analyze.
  * @param column_index The index of the column to analyze.
+ * @param out_index A pointer that will be populated with the generated ValueIndex.
  * @return An InMemoryTable containing the frequency counts, or NULL on failure.
  *         The caller is responsible for freeing this table.
  */
-InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index);
+InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index, struct ValueIndex **out_index);
 
 const char* get_column_name(struct DSVViewer *viewer, int column_index, char* buffer, size_t buffer_size);
 

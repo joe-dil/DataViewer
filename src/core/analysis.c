@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include "logging.h"
 #include "util/utils.h"
+#include "core/value_index.h"
 
 // --- Public API Functions ---
 
@@ -153,6 +154,9 @@ static int compare_freq_counts(const void *a, const void *b, void *context) {
 typedef struct FreqAnalysisEntry {
     const char* value;  // OWNED: malloc'd string, must be freed when entry is destroyed
     int count;
+    size_t *row_indices;         // Dynamically allocated array of row indices
+    size_t row_indices_count;    // Number of row indices stored
+    size_t row_indices_capacity; // Allocated capacity of the array
     struct FreqAnalysisEntry* next;
 } FreqAnalysisEntry;
 
@@ -213,6 +217,7 @@ static void hash_table_destroy(FreqAnalysisHashTable *table) {
         while (entry) {
             FreqAnalysisEntry *next = entry->next;
                 free((char*)entry->value); // Free the strdup'd string
+            free(entry->row_indices);   // Free the row index array
             free(entry);
             entry = next;
         }
@@ -260,7 +265,7 @@ static void hash_table_resize(FreqAnalysisHashTable *table) {
 // - If the value already exists, the passed string is freed
 // - If the value is new, the string is stored in the hash table
 // - If allocation fails, the string is freed to prevent leaks
-static void hash_table_increment(FreqAnalysisHashTable *table, const char *value) {
+static void hash_table_increment(FreqAnalysisHashTable *table, const char *value, size_t row_index) {
     if (!table || !value) return;
 
     uint32_t hash = fnv1a_hash(value);
@@ -270,6 +275,14 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
     for (FreqAnalysisEntry *entry = table->buckets[index]; entry; entry = entry->next) {
         if (strcmp(entry->value, value) == 0) {
             entry->count++;
+            // Add the new row index to the list
+            if (entry->row_indices_count >= entry->row_indices_capacity) {
+                entry->row_indices_capacity = entry->row_indices_capacity > 0 ? entry->row_indices_capacity * 2 : 8;
+                entry->row_indices = realloc(entry->row_indices, entry->row_indices_capacity * sizeof(size_t));
+            }
+            if (entry->row_indices) {
+                entry->row_indices[entry->row_indices_count++] = row_index;
+            }
             free((char*)value);  // Free the duplicate since we found existing entry
             return;
         }
@@ -286,6 +299,16 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
     new_entry->value = value; 
     new_entry->count = 1;
     new_entry->next = table->buckets[index];
+    new_entry->row_indices = malloc(8 * sizeof(size_t));
+    if (new_entry->row_indices) {
+        new_entry->row_indices_capacity = 8;
+        new_entry->row_indices[0] = row_index;
+        new_entry->row_indices_count = 1;
+    } else {
+        new_entry->row_indices_capacity = 0;
+        new_entry->row_indices_count = 0;
+    }
+
     table->buckets[index] = new_entry;
     table->item_count++;
     
@@ -310,11 +333,12 @@ static void hash_table_increment(FreqAnalysisHashTable *table, const char *value
  * @param viewer The main application viewer instance.
  * @param view The data view to analyze.
  * @param column_index The index of the column to analyze.
+ * @param out_index A pointer to a ValueIndex pointer that will be populated.
  * @return An InMemoryTable containing the frequency counts, or NULL on failure.
  *         The caller is responsible for freeing this table with free_in_memory_table().
  */
-InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index) {
-    if (!viewer || !view || !view->data_source || column_index < 0) {
+InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct View *view, int column_index, struct ValueIndex **out_index) {
+    if (!viewer || !view || !view->data_source || column_index < 0 || !out_index) {
         return NULL;
     }
 
@@ -357,13 +381,20 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
             continue;
         }
         
-        hash_table_increment(table, value_copy);
+        hash_table_increment(table, value_copy, actual_row_index);
         // hash_table_increment now owns value_copy - it will free it on error or if duplicate exists
     }
 
     free(field_buffer);
 
     if (table->item_count == 0) {
+        hash_table_destroy(table);
+        return NULL;
+    }
+
+    // Create the ValueIndex to return to the caller
+    *out_index = create_value_index(table->item_count * 2);
+    if (!*out_index) {
         hash_table_destroy(table);
         return NULL;
     }
@@ -382,6 +413,9 @@ InMemoryTable* perform_frequency_analysis(struct DSVViewer *viewer, const struct
             sorted_items[current_item].count = entry->count;
             current_item++;
             
+            // Add to the public-facing ValueIndex
+            add_to_value_index(*out_index, entry->value, entry->row_indices, entry->row_indices_count);
+
             entry = entry->next;
             // Don't free the string here - we'll free it after creating the table
         }

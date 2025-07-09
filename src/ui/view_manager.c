@@ -1,12 +1,17 @@
 #include "view_manager.h"
+#include "view_state.h"
 #include "navigation.h" // For init_row_selection
 #include "app_init.h"   // For init_view_state
 #include "analysis.h"
 #include "core/data_source.h"  // For DataSource access
+#include "core/parser.h"
+#include "util/logging.h"
+#include <core/value_index.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include "util/utils.h"
 
 ViewManager* init_view_manager(void) {
     ViewManager *manager = calloc(1, sizeof(ViewManager));
@@ -31,6 +36,18 @@ static void free_view_resources(View *view) {
     free(view->ranges);
     free(view->row_order_map);
     free(view->visible_rows);  // For backward compatibility
+    free_value_index(view->value_index);
+    free(view->reverse_row_map);
+
+    // Free the analysis cache
+    if (view->analysis_cache) {
+        for (size_t i = 0; i < view->analysis_cache_size; i++) {
+            if (view->analysis_cache[i]) {
+                free_value_index(view->analysis_cache[i]);
+            }
+        }
+        free(view->analysis_cache);
+    }
 }
 
 void cleanup_view_manager(ViewManager *manager) {
@@ -64,6 +81,13 @@ View* create_main_view(DataSource *data_source) {
         main_view->visible_row_count = 0;
     }
     
+    // Initialize analysis cache
+    if (data_source && data_source->ops) {
+        main_view->analysis_cache_size = data_source->ops->get_col_count(data_source->context);
+        main_view->analysis_cache = calloc(main_view->analysis_cache_size, sizeof(ValueIndex*));
+    }
+    // view_build_reverse_map(main_view); // Defer this until it's needed
+
     // Initialize cursor position
     main_view->cursor_row = 0;
     main_view->cursor_col = 0;
@@ -215,6 +239,13 @@ View* create_view_from_selection(ViewManager *manager,
     new_view->sort_direction = SORT_NONE;
     new_view->row_order_map = NULL;
 
+    // Initialize analysis cache
+    if (parent_data_source && parent_data_source->ops) {
+        new_view->analysis_cache_size = parent_data_source->ops->get_col_count(parent_data_source->context);
+        new_view->analysis_cache = calloc(new_view->analysis_cache_size, sizeof(ValueIndex*));
+    }
+    // view_build_reverse_map(new_view); // Defer this until it's needed
+
     snprintf(new_view->name, sizeof(new_view->name), "View %zu (%zu rows)", manager->view_count + 1, count);
 
     // Initialize cursor position - inherit column from current view since it's the same data source
@@ -335,4 +366,190 @@ size_t view_get_actual_row_index(const View *view, size_t display_row) {
     }
     
     return SIZE_MAX; // display_row is out of bounds
+} 
+
+void view_build_reverse_map(View *view) {
+    if (!view || !view->data_source) return;
+
+    free(view->reverse_row_map); // Free existing map if any
+
+    view->reverse_row_map_size = view->data_source->ops->get_row_count(view->data_source->context);
+    if (view->reverse_row_map_size == 0) {
+        view->reverse_row_map = NULL;
+        return;
+    }
+
+    view->reverse_row_map = malloc(view->reverse_row_map_size * sizeof(size_t));
+    if (!view->reverse_row_map) {
+        view->reverse_row_map_size = 0;
+        return; // Allocation failed
+    }
+
+    // Initialize with a sentinel value
+    for (size_t i = 0; i < view->reverse_row_map_size; i++) {
+        view->reverse_row_map[i] = SIZE_MAX;
+    }
+
+    // Populate the map
+    for (size_t i = 0; i < view->visible_row_count; i++) {
+        size_t actual_row = view_get_displayed_row_index(view, i);
+        if (actual_row < view->reverse_row_map_size) {
+            view->reverse_row_map[actual_row] = i;
+        }
+    }
+}
+
+void propagate_selection_to_parent(View *child_view) {
+    if (!child_view || !child_view->parent || child_view->parent_source_column < 0) {
+        return;
+    }
+    LOG_DEBUG("Propagating selection from child '%s' to parent '%s'", child_view->name, child_view->parent->name);
+
+    View *parent_view = child_view->parent;
+    DataSource *parent_ds = parent_view->data_source;
+    DataSource *child_ds = child_view->data_source;
+
+    // 1. Get the value from the selected cell in the child view's "Value" column (column 0)
+    LOG_DEBUG("Child cursor row: %zu", child_view->cursor_row);
+    FieldDesc child_fd = child_ds->ops->get_cell(child_ds->context, child_view->cursor_row, 0);
+    if (child_fd.start == NULL) {
+        LOG_WARN("Child cell is NULL, aborting propagation.");
+        return;
+    }
+    char child_value[4096];
+    render_field(&child_fd, child_value, sizeof(child_value));
+    LOG_DEBUG("Child value: '%s'", child_value);
+
+    // 2. Clear previous selections in the parent view
+    if (parent_view->selection_count > 0) {
+        LOG_DEBUG("Clearing %zu selections in parent view.", parent_view->selection_count);
+        memset(parent_view->row_selected, 0, parent_view->total_rows * sizeof(bool));
+        parent_view->selection_count = 0;
+    }
+
+    // 3. Iterate through the parent view and select matching rows
+    char parent_value[4096];
+    LOG_DEBUG("Iterating %zu visible rows in parent.", parent_view->visible_row_count);
+    for (size_t i = 0; i < parent_view->visible_row_count; i++) {
+        LOG_DEBUG("Processing parent row (display index): %zu", i);
+        size_t actual_row = view_get_displayed_row_index(parent_view, i);
+        if (actual_row == SIZE_MAX) {
+            LOG_WARN("Could not get actual row for display row %zu", i);
+            continue;
+        }
+        LOG_DEBUG("Actual parent row index: %zu", actual_row);
+
+        FieldDesc parent_fd = parent_ds->ops->get_cell(parent_ds->context, actual_row, child_view->parent_source_column);
+        if (parent_fd.start == NULL) {
+            continue;
+        }
+        render_field(&parent_fd, parent_value, sizeof(parent_value));
+
+        if (strcmp(child_value, parent_value) == 0) {
+            LOG_DEBUG("Match found! Selecting row %zu in parent.", i);
+            if (!parent_view->row_selected[i]) {
+                parent_view->row_selected[i] = true;
+                parent_view->selection_count++;
+            }
+        }
+    }
+    LOG_DEBUG("Propagation complete. Parent has %zu selections.", parent_view->selection_count);
+} 
+
+// A simple hash set for strings to quickly check for selected values
+typedef struct {
+    char **values;
+    size_t size;
+    size_t count;
+} StringHashSet;
+
+static StringHashSet* create_string_hash_set(size_t initial_size) {
+    StringHashSet *set = calloc(1, sizeof(StringHashSet));
+    if (!set) return NULL;
+    set->size = initial_size > 0 ? initial_size : 16;
+    set->values = calloc(set->size, sizeof(char*));
+    if (!set->values) {
+        free(set);
+        return NULL;
+    }
+    return set;
+}
+
+static void free_string_hash_set(StringHashSet *set) {
+    if (!set) return;
+    for (size_t i = 0; i < set->size; i++) {
+        free(set->values[i]);
+    }
+    free(set->values);
+    free(set);
+}
+
+static void add_to_string_hash_set(StringHashSet *set, const char *value) {
+    if (!set || !value) return;
+    // Simple linear probing for collision resolution
+    uint32_t hash = fnv1a_hash(value);
+    size_t index = hash % set->size;
+    while (set->values[index] != NULL) {
+        if (strcmp(set->values[index], value) == 0) return; // Already exists
+        index = (index + 1) % set->size;
+    }
+    set->values[index] = strdup(value);
+    set->count++;
+    // Note: resizing logic omitted for simplicity in this context
+}
+
+static bool string_hash_set_contains(const StringHashSet *set, const char *value) {
+    if (!set || !value) return false;
+    uint32_t hash = fnv1a_hash(value);
+    size_t index = hash % set->size;
+    while (set->values[index] != NULL) {
+        if (strcmp(set->values[index], value) == 0) return true;
+        index = (index + 1) % set->size;
+    }
+    return false;
+}
+
+
+void update_parent_selection_from_child(View *child_view) {
+    if (!child_view || !child_view->parent || !child_view->value_index) {
+        return;
+    }
+
+    View *parent_view = child_view->parent;
+    
+    // 1. Get all selected values from the child view
+    size_t *selected_child_rows = NULL;
+    size_t selected_count = get_selected_rows(child_view, &selected_child_rows);
+
+    // 2. Clear parent's selection to rebuild it
+    clear_all_selections(parent_view);
+
+    if (selected_count == 0) {
+        free(selected_child_rows);
+        return; // No selection to propagate
+    }
+
+    // 3. Use the index to find and apply selections
+    char buffer[4096];
+    DataSource *child_ds = child_view->data_source;
+    for (size_t i = 0; i < selected_count; i++) {
+        FieldDesc fd = child_ds->ops->get_cell(child_ds->context, selected_child_rows[i], 0);
+        if (fd.start) {
+            render_field(&fd, buffer, sizeof(buffer));
+            const RowIndexArray *rows = get_from_value_index(child_view->value_index, buffer);
+            if (rows) {
+                for (size_t j = 0; j < rows->count; j++) {
+                    size_t actual_row = rows->indices[j];
+                    if (actual_row < parent_view->reverse_row_map_size) {
+                        size_t disp_row = parent_view->reverse_row_map[actual_row];
+                        if (disp_row != SIZE_MAX && !parent_view->row_selected[disp_row]) {
+                            toggle_row_selection(parent_view, disp_row);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    free(selected_child_rows);
 } 

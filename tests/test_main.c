@@ -1,4 +1,5 @@
 #include "framework/test_runner.h"
+#include "util/logging.h"
 
 // --- Test Suite Declarations ---
 
@@ -25,12 +26,16 @@ extern int sorting_suite_size;
 extern TestCase utils_tests[];
 extern int utils_suite_size;
 
+extern TestCase view_manager_tests[];
+extern int view_manager_suite_size;
+
 extern TestCase foundation_tests[];
 extern int foundation_suite_size;
 
 // --- Main Test Runner ---
 
 int main(void) {
+    init_logging("dsv_test.log"); // Initialize logging for the test runner
     printf("========== Running Unit Test Suites ==========\n");
     
     // Run all the different test suites
@@ -41,6 +46,7 @@ int main(void) {
     run_test_suite(data_source_tests, data_source_suite_size);
     run_test_suite(sorting_tests, sorting_suite_size);
     run_test_suite(utils_tests, utils_suite_size);
+    run_test_suite(view_manager_tests, view_manager_suite_size);
     
     printf("========== Running Integration Tests ==========\n");
     run_test_suite(foundation_tests, foundation_suite_size);

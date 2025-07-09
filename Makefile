@@ -22,6 +22,14 @@ TARGET = bin/dv
 ALL_SOURCES   = $(shell find $(SRCDIR) -name '*.c')
 LIB_SOURCES   = $(filter-out $(SRCDIR)/app/main.c, $(ALL_SOURCES))
 MAIN_SOURCE   = $(SRCDIR)/app/main.c
+CORE_SRC = \
+    src/core/analysis.c \
+    src/core/data_source.c \
+    src/core/file_io.c \
+    src/core/parser.c \
+    src/core/search.c \
+    src/core/sorting.c \
+    src/core/value_index.c
 
 # Object and dependency lists
 LIB_OBJECTS   = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SOURCES))

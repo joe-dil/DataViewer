@@ -231,4 +231,5 @@ void sort_view(View *view) {
         }
     }
     free(decorated_rows);
+    view_build_reverse_map(view);
 } 

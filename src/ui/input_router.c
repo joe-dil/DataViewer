@@ -159,10 +159,33 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     snprintf(col_name, sizeof(col_name), "Column %zu", state->current_view->cursor_col + 1);
                 }
                 
-                // Perform analysis
-                InMemoryTable* table = perform_frequency_analysis(viewer, 
-                                                                 state->current_view, 
-                                                                 state->current_view->cursor_col);
+                ValueIndex *value_index = NULL;
+                View *parent_view = state->current_view;
+                size_t col_idx = parent_view->cursor_col;
+
+                // Build the reverse map for the parent if it doesn't exist
+                if (!parent_view->reverse_row_map) {
+                    view_build_reverse_map(parent_view);
+                }
+
+                // Check cache first
+                if (col_idx < parent_view->analysis_cache_size && parent_view->analysis_cache[col_idx]) {
+                    value_index = parent_view->analysis_cache[col_idx];
+                }
+
+                InMemoryTable* table = NULL;
+                if (value_index) {
+                    // We need to recreate the table from the index, this is a future optimization
+                    // For now, we re-run the analysis to get the table. The index is still used for selection.
+                    table = perform_frequency_analysis(viewer, parent_view, col_idx, &value_index);
+                } else {
+                    table = perform_frequency_analysis(viewer, parent_view, col_idx, &value_index);
+                    // Store new index in cache
+                    if (value_index && col_idx < parent_view->analysis_cache_size) {
+                        parent_view->analysis_cache[col_idx] = value_index;
+                    }
+                }
+
                 if (table) {
                     // Create data source for the table
                     DataSource *ds = create_memory_data_source(table);
@@ -184,8 +207,13 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                              "Freq: %s", col_name);
                     freq_view->data_source = ds;
                     freq_view->owns_data_source = true;
+                    freq_view->value_index = value_index; // Use the cached or new index
                     freq_view->visible_rows = NULL;
                     freq_view->visible_row_count = ds->ops->get_row_count(ds->context);
+                    
+                    // Establish parent-child relationship for linked selection
+                    freq_view->parent = state->current_view;
+                    freq_view->parent_source_column = state->current_view->cursor_col;
                     
                     // Initialize cursor position
                     freq_view->cursor_row = 0;
@@ -200,6 +228,8 @@ InputResult handle_table_input(int ch, struct DSVViewer *viewer, ViewState *stat
                     if (!add_view_to_manager(viewer->view_manager, freq_view)) {
                         free(freq_view);
                         destroy_data_source(ds);
+                        // Do not free the index, it's now owned by the parent's cache
+                        // free_value_index(value_index); 
                         set_error_message(viewer, "Maximum number of views reached (%zu)", 
                                         viewer->view_manager->max_views);
                         return INPUT_CONSUMED;

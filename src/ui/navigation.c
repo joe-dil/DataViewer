@@ -1,6 +1,7 @@
 #include "navigation.h"
 #include "app_init.h"
 #include "constants.h"
+#include "view_manager.h"
 #include <ncurses.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -188,6 +189,11 @@ void toggle_row_selection(struct View *view, size_t row) {
     } else {
         view->row_selected[row] = true;
         view->selection_count++;
+    }
+
+    // If this is a child view, propagate the selection change to the parent
+    if (view->parent && view->parent_source_column >= 0) {
+        update_parent_selection_from_child(view);
     }
 }
 
